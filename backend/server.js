@@ -6,6 +6,13 @@ const authRoutes = require('./src/routes/auth.routes');
 const matchRoutes = require('./src/routes/match.routes');
 const ticketRoutes = require('./src/routes/ticket.routes');
 const productoRoutes = require('./src/routes/producto.routes');
+const orderRoutes = require('./src/routes/order.routes');
+const membershipRoutes = require('./src/routes/membership.routes');
+const tenantRoutes = require('./src/routes/tenant.routes');
+const userRoutes = require('./src/routes/user.routes');
+const zoneRoutes = require('./src/routes/zone.routes');
+const associationRoutes = require('./src/routes/association.routes');
+const clubRequestRoutes = require('./src/routes/clubRequest.routes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -42,6 +49,13 @@ app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/matches', matchRoutes);
 app.use('/api/v1/tickets', ticketRoutes);
 app.use('/api/v1/productos', productoRoutes);
+app.use('/api/v1/orders', orderRoutes);
+app.use('/api/v1/memberships', membershipRoutes);
+app.use('/api/v1/tenants', tenantRoutes);
+app.use('/api/v1/users', userRoutes);
+app.use('/api/v1/zones', zoneRoutes);
+app.use('/api/v1/associations', associationRoutes);
+app.use('/api/v1/club-requests', clubRequestRoutes);
 app.listen(PORT, () => {
   console.log(`Servidor backend ejecutándose en http://localhost:${PORT}`);
 });
