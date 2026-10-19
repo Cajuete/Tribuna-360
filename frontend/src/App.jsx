@@ -1,9 +1,20 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import Navbar from './components/Navbar';
+import Footer from './components/Footer';
+import ProtectedRoute from './components/ProtectedRoute';
 import Home from './pages/Home';
 import Scanner from './pages/Scanner';
 import AdminDashboard from './pages/AdminDashboard';
+import Login from './pages/Login';
+import Register from './pages/Register';
+import BuyTickets from './pages/BuyTickets';
+import MyTickets from './pages/MyTickets';
+import Tienda from './pages/Tienda';
+import MyOrders from './pages/MyOrders';
+import Socios from './pages/Socios';
+import MyMembership from './pages/MyMembership';
+import Unete from './pages/Unete';
 
 export default function App() {
   return (
@@ -14,13 +25,40 @@ export default function App() {
           <main className="flex-grow">
             <Routes>
               <Route path="/" element={<Home />} />
-              <Route path="/scanner" element={<Scanner />} />
-              <Route path="/admin" element={<AdminDashboard />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/registro" element={<Register />} />
+              <Route path="/unete" element={<Unete />} />
+              <Route path="/comprar/:matchId" element={<BuyTickets />} />
+              <Route path="/tienda" element={<Tienda />} />
+              <Route path="/socios" element={<Socios />} />
+              <Route path="/mis-socio" element={
+                <ProtectedRoute><MyMembership /></ProtectedRoute>
+              } />
+              <Route path="/mis-entradas" element={
+                <ProtectedRoute><MyTickets /></ProtectedRoute>
+              } />
+              <Route path="/mis-pedidos" element={
+                <ProtectedRoute><MyOrders /></ProtectedRoute>
+              } />
+              <Route
+                path="/scanner"
+                element={
+                  <ProtectedRoute roles={['superadmin', 'club_admin', 'gate_operator']}>
+                    <Scanner />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin"
+                element={
+                  <ProtectedRoute roles={['superadmin', 'club_admin']}>
+                    <AdminDashboard />
+                  </ProtectedRoute>
+                }
+              />
             </Routes>
           </main>
-          <footer className="bg-gray-800 border-t border-gray-700 py-4 text-center text-gray-400 text-sm">
-            &copy; 2026 Tribuna 360 - Tesis de Ingeniería de Software
-          </footer>
+          <Footer />
         </div>
       </Router>
     </AuthProvider>
