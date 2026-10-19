@@ -22,7 +22,12 @@ const getMatches = async (req, res) => {
 };
 const createMatch = async (req, res) => {
     try {
-        const { tenant_id, opponent, match_date, stadium_name } = req.body;
+        const { opponent, match_date, stadium_name } = req.body;
+        let tenant_id = req.body.tenant_id;
+
+        if (req.user.role === 'club_admin') {
+            tenant_id = req.user.tenant_id;
+        }
 
         if (!tenant_id || !opponent || !match_date || !stadium_name) {
             return res.status(400).json({ status: 'error', message: 'Faltan campos obligatorios para programar el partido.' });
@@ -52,6 +57,26 @@ const updateMatch = async (req, res) => {
             return res.status(400).json({
                 status: 'error',
                 message: 'Se requiere el identificador del partido para la actualización.'
+            });
+        }
+
+        const { data: existing } = await supabase
+            .from('matches')
+            .select('id, tenant_id')
+            .eq('id', id)
+            .maybeSingle();
+
+        if (!existing) {
+            return res.status(404).json({
+                status: 'error',
+                message: 'El partido especificado no existe o no pudo ser encontrado.'
+            });
+        }
+
+        if (req.user.role !== 'superadmin' && existing.tenant_id !== req.user.tenant_id) {
+            return res.status(403).json({
+                status: 'error',
+                message: 'Este partido pertenece a otro club.'
             });
         }
 
@@ -102,6 +127,26 @@ const deleteMatch = async (req, res) => {
             });
         }
 
+        const { data: existing } = await supabase
+            .from('matches')
+            .select('id, tenant_id')
+            .eq('id', id)
+            .maybeSingle();
+
+        if (!existing) {
+            return res.status(404).json({
+                status: 'error',
+                message: 'El partido a eliminar no fue encontrado.'
+            });
+        }
+
+        if (req.user.role !== 'superadmin' && existing.tenant_id !== req.user.tenant_id) {
+            return res.status(403).json({
+                status: 'error',
+                message: 'Este partido pertenece a otro club.'
+            });
+        }
+
         const { data, error } = await supabase
             .from('matches')
             .delete()
@@ -138,9 +183,51 @@ const deleteMatch = async (req, res) => {
     }
 };
 
+const getMatchById = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const { data, error } = await supabase
+            .from('matches')
+            .select('*, tenants(name, slug)')
+            .eq('id', id)
+            .single();
+
+        if (error || !data) {
+            return res.status(404).json({ status: 'error', message: 'Partido no encontrado.' });
+        }
+
+        return res.status(200).json({ status: 'success', data });
+    } catch (err) {
+        return res.status(500).json({ status: 'error', message: 'Error interno del servidor', error: err.message });
+    }
+};
+
+const getMatchZones = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const { data, error } = await supabase
+            .from('zones')
+            .select('*')
+            .eq('match_id', id)
+            .order('price', { ascending: true });
+
+        if (error) {
+            return res.status(400).json({ status: 'error', message: error.message });
+        }
+
+        return res.status(200).json({ status: 'success', data });
+    } catch (err) {
+        return res.status(500).json({ status: 'error', message: 'Error interno del servidor', error: err.message });
+    }
+};
+
 module.exports = {
     getMatches,
     createMatch,
-    updateMatch, 
-    deleteMatch
+    updateMatch,
+    deleteMatch,
+    getMatchById,
+    getMatchZones
 };
