@@ -184,7 +184,11 @@ function ClubSpace({ slug }) {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {matches.map(m => (
                 <article key={m.id} className="card card-hover p-6 flex flex-col">
-                  <span className="badge self-start">{m.status}</span>
+                  <div className="flex flex-wrap gap-2 self-start">
+                    <span className="badge">{m.status}</span>
+                    {m.competition && <span className="badge">{m.competition}</span>}
+                    {m.matchday && <span className="badge">Jornada {m.matchday}</span>}
+                  </div>
                   <h3 className="font-display text-xl font-bold mt-3">{m.opponent}</h3>
                   <p className="text-sm text-gray-400 mt-1">{m.stadium_name}</p>
                   <p className="text-xs text-gray-500 mt-1">{new Date(m.match_date).toLocaleString()}</p>

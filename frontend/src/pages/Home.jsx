@@ -229,6 +229,11 @@ export default function Home() {
                 </div>
                 <div className="p-5 flex flex-col flex-1">
                   <h3 className="font-display text-xl font-bold text-white">{m.opponent}</h3>
+                  {(m.competition || m.matchday) && (
+                    <p className="text-[0.65rem] font-bold uppercase tracking-widest text-emerald-400 mt-1">
+                      {[m.competition, m.matchday ? `Jornada ${m.matchday}` : null].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
                   <p className="text-sm text-gray-400 mt-1">{m.stadium_name}</p>
                   <p className="text-xs text-gray-500 mt-1">
                     {new Date(m.match_date).toLocaleString()}

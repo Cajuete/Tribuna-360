@@ -20,6 +20,17 @@ export const matchService = {
     });
   },
 
+  async updateMatch(id, payload) {
+    return await apiRequest(`/matches/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async deleteMatch(id) {
+    return await apiRequest(`/matches/${id}`, { method: 'DELETE' });
+  },
+
   async addZone(matchId, payload) {
     return await apiRequest(`/zones/${matchId}`, {
       method: 'POST',

@@ -56,6 +56,26 @@ const MATCH_STATUS_LABELS = {
 const inputCls = 'w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-white';
 const labelCls = 'text-xs text-gray-400 block mb-1';
 
+const formatMatchDate = (iso) => new Date(iso).toLocaleString('es-BO', {
+  weekday: 'short',
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
+const toLocalInput = (iso) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+};
+
+const minMatchDate = () => {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+};
+
 function Notice({ msg }) {
   if (!msg) return null;
   return (
@@ -79,7 +99,11 @@ export default function AdminDashboard() {
   const { user } = useAuth();
   const isSuperadmin = user?.role === 'superadmin';
   const [searchParams, setSearchParams] = useSearchParams();
-  const [form, setForm] = useState({ tenant_id: '', opponent: '', match_date: '', stadium_name: 'Estadio Hernando Siles' });
+  const [form, setForm] = useState({ tenant_id: '', opponent: '', competition: '', matchday: '', match_date: '', stadium_name: '' });
+  const [draftZones, setDraftZones] = useState([]);
+  const [editingMatchId, setEditingMatchId] = useState(null);
+  const [editForm, setEditForm] = useState({ opponent: '', competition: '', matchday: '', match_date: '', stadium_name: '', status: 'scheduled' });
+  const [matchListMsg, setMatchListMsg] = useState(null);
   const [message, setMessage] = useState(null);
   const [orders, setOrders] = useState([]);
   const [ordersError, setOrdersError] = useState(null);
@@ -161,11 +185,18 @@ export default function AdminDashboard() {
     loadUsers();
   }, [isSuperadmin]);
 
+  const loadAdminMatches = () => {
+    const qs = !isSuperadmin && user?.tenant_id ? `?tenant_id=${user.tenant_id}` : '';
+    matchService.getAllMatches(qs)
+      .then(res => { if (res.status === 'success') setAdminMatches(res.data); })
+      .catch(err => setMatchListMsg({ ok: false, text: err.message }));
+  };
+
   useEffect(() => {
     const qs = !isSuperadmin && user?.tenant_id ? `?tenant_id=${user.tenant_id}` : '';
     matchService.getAllMatches(qs)
       .then(res => { if (res.status === 'success') setAdminMatches(res.data); })
-      .catch(err => setZoneMsg({ ok: false, text: err.message }));
+      .catch(err => setMatchListMsg({ ok: false, text: err.message }));
   }, [user?.tenant_id, isSuperadmin]);
 
   const myTenant = !isSuperadmin && user?.tenant_id ? tenants.find(t => t.id === user.tenant_id) : null;
@@ -346,20 +377,108 @@ export default function AdminDashboard() {
     }
   };
 
+  const addDraftZone = () => setDraftZones(z => [...z, { name: '', price: '', capacity: '' }]);
+  const updateDraftZone = (index, key, value) => setDraftZones(z => z.map((zone, i) => i === index ? { ...zone, [key]: value } : zone));
+  const removeDraftZone = (index) => setDraftZones(z => z.filter((_, i) => i !== index));
+
   const handleMatchSubmit = async (e) => {
     e.preventDefault();
     setMessage(null);
+
+    const zones = draftZones.filter(z => z.name.trim() || z.price !== '' || z.capacity !== '');
+    const invalidZone = zones.find(z => !z.name.trim() || z.price === '' || z.capacity === '' || Number(z.price) < 0 || Number(z.capacity) < 1);
+    if (invalidZone) {
+      setMessage({ ok: false, text: 'Completa nombre, precio y aforo de cada zona (aforo mínimo 1).' });
+      return;
+    }
+
     try {
-      await matchService.createMatch(form);
-      setMessage({ ok: true, text: '¡Partido creado y publicado con éxito!' });
-      setForm({ ...form, opponent: '', match_date: '' });
-      const qs = !isSuperadmin && user?.tenant_id ? `?tenant_id=${user.tenant_id}` : '';
-      matchService.getAllMatches(qs)
-        .then(res => { if (res.status === 'success') setAdminMatches(res.data); })
-        .catch(() => {});
+      const payload = { ...form, stadium_name: form.stadium_name.trim() || myTenant?.stadium_name || '' };
+      const res = await matchService.createMatch(payload);
+      const match = res.data;
+      let zoneErrors = 0;
+      for (const zone of zones) {
+        try {
+          await matchService.addZone(match.id, {
+            name: zone.name.trim(),
+            price: Number(zone.price),
+            capacity: Number(zone.capacity),
+          });
+        } catch {
+          zoneErrors++;
+        }
+      }
+      setMessage({
+        ok: zoneErrors === 0,
+        text: zoneErrors === 0
+          ? `Partido publicado${zones.length ? ` con ${zones.length} zona(s)` : ''}.`
+          : `Partido publicado, pero ${zoneErrors} zona(s) no se pudieron guardar.`
+      });
+      setForm(f => ({
+        tenant_id: isSuperadmin ? f.tenant_id : '',
+        opponent: '',
+        competition: '',
+        matchday: '',
+        match_date: '',
+        stadium_name: myTenant?.stadium_name || '',
+      }));
+      setDraftZones([]);
+      loadAdminMatches();
     } catch (err) {
       setMessage({ ok: false, text: err.message });
     }
+  };
+
+  const handleEditStart = (m) => {
+    setEditingMatchId(m.id);
+    setEditForm({
+      opponent: m.opponent || '',
+      competition: m.competition || '',
+      matchday: m.matchday ?? '',
+      match_date: toLocalInput(m.match_date),
+      stadium_name: m.stadium_name || '',
+      status: m.status || 'scheduled',
+    });
+    setMatchListMsg(null);
+  };
+
+  const handleEditSave = async (e) => {
+    e.preventDefault();
+    setMatchListMsg(null);
+    const payload = { ...editForm };
+    if (!String(payload.competition || '').trim()) delete payload.competition;
+    if (String(payload.matchday ?? '').trim() === '') delete payload.matchday;
+    try {
+      const res = await matchService.updateMatch(editingMatchId, payload);
+      setMatchListMsg({ ok: true, text: res.message });
+      setEditingMatchId(null);
+      loadAdminMatches();
+    } catch (err) {
+      setMatchListMsg({ ok: false, text: err.message });
+    }
+  };
+
+  const handleDeleteMatch = async (m) => {
+    if (!window.confirm(`¿Eliminar el partido vs ${m.opponent}? Esta acción no se puede deshacer.`)) return;
+    setMatchListMsg(null);
+    try {
+      const res = await matchService.deleteMatch(m.id);
+      setMatchListMsg({ ok: true, text: res.message });
+      if (zoneMatchId === m.id) {
+        setZoneMatchId('');
+        setZones([]);
+      }
+      if (editingMatchId === m.id) setEditingMatchId(null);
+      loadAdminMatches();
+    } catch (err) {
+      setMatchListMsg({ ok: false, text: err.message });
+    }
+  };
+
+  const handleManageZones = (matchId) => {
+    setZoneMsg(null);
+    setZoneMatchId(matchId);
+    loadZones(matchId);
   };
 
   const handleStatus = async (id, status) => {
@@ -529,45 +648,163 @@ export default function AdminDashboard() {
           <div className="space-y-10">
             <div>
               <h3 className="text-xl font-semibold mb-3">Nuevo partido</h3>
-              <form onSubmit={handleMatchSubmit} className="bg-gray-800 p-6 rounded-2xl border border-gray-700 space-y-4">
-                <input type="text" placeholder="Rival" value={form.opponent} onChange={e => setForm({ ...form, opponent: e.target.value })} required className={inputCls} />
-                <select
-                  value={isSuperadmin ? form.tenant_id : (user?.tenant_id || '')}
-                  onChange={e => setForm({ ...form, tenant_id: e.target.value })}
-                  disabled={!isSuperadmin}
-                  required
-                  className={`${inputCls} disabled:opacity-60`}
-                >
-                  <option value="">Selecciona el club...</option>
-                  {tenants.map(t => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
-                <input type="datetime-local" value={form.match_date} onChange={e => setForm({ ...form, match_date: e.target.value })} required className={inputCls} />
-                <input type="text" placeholder="Estadio" value={form.stadium_name} onChange={e => setForm({ ...form, stadium_name: e.target.value })} required className={inputCls} />
-                <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 rounded-lg">Guardar Partido</button>
+              <form onSubmit={handleMatchSubmit} className="bg-gray-800 p-6 rounded-2xl border border-gray-700 grid grid-cols-1 md:grid-cols-2 gap-4">
+                {isSuperadmin && (
+                  <label className="md:col-span-2">
+                    <span className={labelCls}>Club *</span>
+                    <select
+                      value={form.tenant_id}
+                      onChange={e => {
+                        const tenant = tenants.find(t => t.id === e.target.value);
+                        setForm(f => ({ ...f, tenant_id: e.target.value, stadium_name: tenant?.stadium_name || f.stadium_name }));
+                      }}
+                      required
+                      className={inputCls}
+                    >
+                      <option value="">Selecciona el club...</option>
+                      {tenants.map(t => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
+                <label>
+                  <span className={labelCls}>Rival *</span>
+                  <input type="text" placeholder="The Strongest" value={form.opponent} onChange={e => setForm({ ...form, opponent: e.target.value })} required className={inputCls} />
+                </label>
+                <label>
+                  <span className={labelCls}>Competencia</span>
+                  <input type="text" placeholder="Liga Profesional, Copa Libertadores..." value={form.competition} onChange={e => setForm({ ...form, competition: e.target.value })} className={inputCls} />
+                </label>
+                <label>
+                  <span className={labelCls}>Jornada</span>
+                  <input type="number" min="1" step="1" placeholder="Ej. 12" value={form.matchday} onChange={e => setForm({ ...form, matchday: e.target.value })} className={inputCls} />
+                </label>
+                <label>
+                  <span className={labelCls}>Fecha y hora *</span>
+                  <input type="datetime-local" min={minMatchDate()} value={form.match_date} onChange={e => setForm({ ...form, match_date: e.target.value })} required className={inputCls} />
+                </label>
+                <label className="md:col-span-2">
+                  <span className={labelCls}>Estadio *</span>
+                  <input type="text" placeholder="Estadio Hernando Siles" value={form.stadium_name || myTenant?.stadium_name || ''} onChange={e => setForm({ ...form, stadium_name: e.target.value })} required className={inputCls} />
+                </label>
+
+                <div className="md:col-span-2 border-t border-gray-700 pt-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                    <div>
+                      <p className="font-semibold text-sm">Zonas y precios</p>
+                      <p className="text-xs text-gray-500">Puedes crear las zonas ahora o gestionarlas después.</p>
+                    </div>
+                    <button type="button" onClick={addDraftZone} className="bg-gray-700 hover:bg-gray-600 text-white text-sm px-4 py-2 rounded-lg transition">
+                      + Agregar zona
+                    </button>
+                  </div>
+
+                  {draftZones.length === 0 ? (
+                    <p className="text-gray-500 text-sm">Sin zonas por ahora.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {draftZones.map((zone, index) => (
+                        <div key={index} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-end">
+                          <label className="md:col-span-5">
+                            <span className={labelCls}>Zona</span>
+                            <input type="text" placeholder="Curva Sur, Butacas..." value={zone.name} onChange={e => updateDraftZone(index, 'name', e.target.value)} className={inputCls} />
+                          </label>
+                          <label className="md:col-span-3">
+                            <span className={labelCls}>Precio Bs</span>
+                            <input type="number" min="0" step="1" placeholder="50" value={zone.price} onChange={e => updateDraftZone(index, 'price', e.target.value)} className={inputCls} />
+                          </label>
+                          <label className="md:col-span-3">
+                            <span className={labelCls}>Aforo</span>
+                            <input type="number" min="1" step="1" placeholder="1000" value={zone.capacity} onChange={e => updateDraftZone(index, 'capacity', e.target.value)} className={inputCls} />
+                          </label>
+                          <button type="button" onClick={() => removeDraftZone(index)} aria-label="Quitar zona" className="md:col-span-1 bg-red-800 hover:bg-red-700 text-white py-3 rounded-lg">×</button>
+                        </div>
+                      ))}
+                      <p className="text-xs text-gray-500 text-right">
+                        Aforo total: {draftZones.reduce((sum, z) => sum + (Number(z.capacity) || 0), 0).toLocaleString()} personas
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <button type="submit" className="md:col-span-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 rounded-lg">Publicar partido</button>
               </form>
               <Notice msg={message} />
             </div>
 
             <div>
-              <h3 className="text-xl font-semibold mb-3">Mis partidos</h3>
+              <h3 className="text-xl font-semibold mb-3">Partidos programados</h3>
+              <Notice msg={matchListMsg} />
               {adminMatches.length === 0 ? (
                 <p className="text-gray-400 text-sm bg-gray-800 border border-gray-700 rounded-xl p-5">Aún no hay partidos publicados.</p>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {adminMatches.map(m => (
-                    <div key={m.id} className="bg-gray-800 border border-gray-700 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3 text-sm">
-                      <div>
-                        <p className="font-bold">vs {m.opponent}</p>
-                        <p className="text-gray-400 text-xs">
-                          {m.stadium_name} · {new Date(m.match_date).toLocaleString()}
-                          {isSuperadmin && m.tenants?.name ? ` · ${m.tenants.name}` : ''}
-                        </p>
-                      </div>
-                      <span className="text-xs px-3 py-1 rounded-full uppercase font-semibold bg-gray-900 border border-gray-700 text-emerald-300">
-                        {MATCH_STATUS_LABELS[m.status] || m.status}
-                      </span>
+                    <div key={m.id} className="bg-gray-800 border border-gray-700 rounded-xl p-4 text-sm">
+                      {editingMatchId === m.id ? (
+                        <form onSubmit={handleEditSave} className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <label>
+                            <span className={labelCls}>Rival *</span>
+                            <input type="text" value={editForm.opponent} onChange={e => setEditForm({ ...editForm, opponent: e.target.value })} required className={inputCls} />
+                          </label>
+                          <label>
+                            <span className={labelCls}>Competencia</span>
+                            <input type="text" value={editForm.competition} onChange={e => setEditForm({ ...editForm, competition: e.target.value })} className={inputCls} />
+                          </label>
+                          <label>
+                            <span className={labelCls}>Jornada</span>
+                            <input type="number" min="1" step="1" value={editForm.matchday} onChange={e => setEditForm({ ...editForm, matchday: e.target.value })} className={inputCls} />
+                          </label>
+                          <label>
+                            <span className={labelCls}>Fecha y hora *</span>
+                            <input type="datetime-local" value={editForm.match_date} onChange={e => setEditForm({ ...editForm, match_date: e.target.value })} required className={inputCls} />
+                          </label>
+                          <label>
+                            <span className={labelCls}>Estadio *</span>
+                            <input type="text" value={editForm.stadium_name} onChange={e => setEditForm({ ...editForm, stadium_name: e.target.value })} required className={inputCls} />
+                          </label>
+                          <label>
+                            <span className={labelCls}>Estado</span>
+                            <select value={editForm.status} onChange={e => setEditForm({ ...editForm, status: e.target.value })} className={inputCls}>
+                              {Object.entries(MATCH_STATUS_LABELS).map(([value, label]) => (
+                                <option key={value} value={value}>{label}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <div className="md:col-span-2 flex justify-end gap-2">
+                            <button type="button" onClick={() => setEditingMatchId(null)} className="bg-gray-700 hover:bg-gray-600 text-white text-sm px-4 py-2 rounded-lg transition">Cancelar</button>
+                            <button type="submit" className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm px-4 py-2 rounded-lg transition">Guardar cambios</button>
+                          </div>
+                        </form>
+                      ) : (
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="font-bold">vs {m.opponent}</p>
+                              {m.competition && (
+                                <span className="text-[0.65rem] uppercase tracking-wider px-2 py-0.5 rounded-full bg-sky-900 text-sky-300 border border-sky-800">{m.competition}</span>
+                              )}
+                              {m.matchday && (
+                                <span className="text-[0.65rem] uppercase tracking-wider px-2 py-0.5 rounded-full bg-gray-900 text-gray-300 border border-gray-700">Jornada {m.matchday}</span>
+                              )}
+                            </div>
+                            <p className="text-gray-400 text-xs mt-1">
+                              {formatMatchDate(m.match_date)} · {m.stadium_name}
+                              {isSuperadmin && m.tenants?.name ? ` · ${m.tenants.name}` : ''}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs px-3 py-1 rounded-full uppercase font-semibold bg-gray-900 border border-gray-700 text-emerald-300">
+                              {MATCH_STATUS_LABELS[m.status] || m.status}
+                            </span>
+                            <button type="button" onClick={() => handleManageZones(m.id)} className="bg-gray-700 hover:bg-gray-600 text-white text-xs px-3 py-1.5 rounded-lg transition">Zonas</button>
+                            <button type="button" onClick={() => handleEditStart(m)} className="bg-sky-800 hover:bg-sky-700 text-white text-xs px-3 py-1.5 rounded-lg transition">Editar</button>
+                            <button type="button" onClick={() => handleDeleteMatch(m)} className="bg-red-800 hover:bg-red-700 text-white text-xs px-3 py-1.5 rounded-lg transition">Eliminar</button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
