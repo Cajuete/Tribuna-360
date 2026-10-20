@@ -15,6 +15,28 @@ const getTenants = async (req, res) => {
     }
 };
 
+const getTenantBySlug = async (req, res) => {
+    try {
+        const { slug } = req.params;
+
+        const { data, error } = await supabase
+            .from('tenants')
+            .select('id, name, slug, logo_url, stadium_name, stadium_capacity, department, personeria, run_code, created_at, associations(code, name)')
+            .eq('slug', slug)
+            .maybeSingle();
+
+        if (error) throw error;
+
+        if (!data) {
+            return res.status(404).json({ status: 'error', message: 'Club no encontrado.' });
+        }
+
+        return res.status(200).json({ status: 'success', data });
+    } catch (error) {
+        return res.status(500).json({ status: 'error', message: 'Error al obtener el club', error: error.message });
+    }
+};
+
 const createTenant = async (req, res) => {
     try {
         const { name, slug } = req.body;
@@ -50,15 +72,46 @@ const createTenant = async (req, res) => {
 const updateTenant = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, slug } = req.body;
+        const isSuperadmin = req.user.role === 'superadmin';
 
-        if (!name && !slug) {
-            return res.status(400).json({ status: 'error', message: 'Datos inválidos: envía nombre o slug.' });
+        if (!isSuperadmin && req.user.tenant_id !== id) {
+            return res.status(403).json({ status: 'error', message: 'Solo puedes editar tu propio club.' });
         }
 
+        const { name, slug, logo_url, stadium_name, stadium_capacity, department, personeria, run_code } = req.body;
         const patch = {};
-        if (name) patch.name = name;
-        if (slug) patch.slug = slug;
+
+        if (name !== undefined) {
+            const value = String(name).trim();
+            if (!value) return res.status(400).json({ status: 'error', message: 'El nombre del club no puede estar vacío.' });
+            patch.name = value;
+        }
+
+        if (slug !== undefined && isSuperadmin) {
+            const value = String(slug).trim();
+            if (!/^[a-z0-9-]+$/.test(value)) {
+                return res.status(400).json({ status: 'error', message: 'Slug inválido: usa minúsculas, números y guiones.' });
+            }
+            patch.slug = value;
+        }
+
+        if (logo_url !== undefined) patch.logo_url = logo_url ? String(logo_url).trim() : null;
+        if (stadium_name !== undefined) patch.stadium_name = stadium_name ? String(stadium_name).trim() : null;
+        if (department !== undefined) patch.department = department ? String(department).trim() : null;
+        if (personeria !== undefined) patch.personeria = personeria ? String(personeria).trim() : null;
+        if (run_code !== undefined) patch.run_code = run_code ? String(run_code).trim() : null;
+
+        if (stadium_capacity !== undefined) {
+            const capacity = Number(stadium_capacity);
+            if (!Number.isInteger(capacity) || capacity < 1) {
+                return res.status(400).json({ status: 'error', message: 'La capacidad del estadio debe ser un entero mayor a 0.' });
+            }
+            patch.stadium_capacity = capacity;
+        }
+
+        if (Object.keys(patch).length === 0) {
+            return res.status(400).json({ status: 'error', message: 'No hay datos para actualizar.' });
+        }
 
         const { data, error } = await supabase
             .from('tenants')
@@ -67,7 +120,14 @@ const updateTenant = async (req, res) => {
             .select()
             .single();
 
-        if (error || !data) {
+        if (error) {
+            if (error.code === '23505') {
+                return res.status(409).json({ status: 'error', message: 'Ya existe un club con ese slug.' });
+            }
+            throw error;
+        }
+
+        if (!data) {
             return res.status(404).json({ status: 'error', message: 'Club no encontrado.' });
         }
 
@@ -79,6 +139,7 @@ const updateTenant = async (req, res) => {
 
 module.exports = {
     getTenants,
+    getTenantBySlug,
     createTenant,
     updateTenant
 };

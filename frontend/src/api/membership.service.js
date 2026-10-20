@@ -1,8 +1,9 @@
 import { apiRequest } from './client';
 
 export const membershipService = {
-  async getPlans() {
-    return await apiRequest('/memberships/plans', { method: 'GET' });
+  async getPlans(tenantId) {
+    const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+    return await apiRequest(`/memberships/plans${qs}`, { method: 'GET' });
   },
 
   async subscribe(planId) {

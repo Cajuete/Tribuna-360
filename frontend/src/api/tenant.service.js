@@ -5,6 +5,10 @@ export const tenantService = {
     return await apiRequest('/tenants', { method: 'GET' });
   },
 
+  async getBySlug(slug) {
+    return await apiRequest(`/tenants/${encodeURIComponent(slug)}`, { method: 'GET' });
+  },
+
   async create(payload) {
     return await apiRequest('/tenants', {
       method: 'POST',

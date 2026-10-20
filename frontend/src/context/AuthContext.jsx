@@ -4,7 +4,9 @@ import { authService } from '../api/auth.service';
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('supabase_token') || null);
+  const [token, setToken] = useState(
+    () => sessionStorage.getItem('supabase_token') || localStorage.getItem('supabase_token') || null
+  );
   const [loading, setLoading] = useState(Boolean(token));
 
   useEffect(() => {
@@ -18,6 +20,7 @@ export const AuthProvider = ({ children }) => {
       .catch(() => {
         if (active) {
           localStorage.removeItem('supabase_token');
+          sessionStorage.removeItem('supabase_token');
           setToken(null);
           setUser(null);
         }
@@ -29,11 +32,11 @@ export const AuthProvider = ({ children }) => {
     return () => { active = false; };
   }, [token]);
 
-  const login = (userData, jwtToken) => {
+  const login = (userData, jwtToken, remember = true) => {
     setUser(userData);
     setToken(jwtToken);
     setLoading(false);
-    localStorage.setItem('supabase_token', jwtToken);
+    (remember ? localStorage : sessionStorage).setItem('supabase_token', jwtToken);
   };
 
   const logout = () => {
@@ -41,6 +44,7 @@ export const AuthProvider = ({ children }) => {
     setToken(null);
     setLoading(false);
     localStorage.removeItem('supabase_token');
+    sessionStorage.removeItem('supabase_token');
   };
 
   return (

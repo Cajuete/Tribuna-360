@@ -1,8 +1,8 @@
 import { apiRequest } from './client';
 
 export const productService = {
-  async getAll() {
-    return await apiRequest('/productos', { method: 'GET' });
+  async getAll(qs = '') {
+    return await apiRequest(`/productos${qs}`, { method: 'GET' });
   },
 
   async create(payload) {

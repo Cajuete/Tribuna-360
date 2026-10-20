@@ -13,6 +13,7 @@ const userRoutes = require('./src/routes/user.routes');
 const zoneRoutes = require('./src/routes/zone.routes');
 const associationRoutes = require('./src/routes/association.routes');
 const clubRequestRoutes = require('./src/routes/clubRequest.routes');
+const uploadRoutes = require('./src/routes/upload.routes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -56,6 +57,7 @@ app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/zones', zoneRoutes);
 app.use('/api/v1/associations', associationRoutes);
 app.use('/api/v1/club-requests', clubRequestRoutes);
+app.use('/api/v1/uploads', uploadRoutes);
 app.listen(PORT, () => {
   console.log(`Servidor backend ejecutándose en http://localhost:${PORT}`);
 });

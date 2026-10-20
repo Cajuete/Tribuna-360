@@ -12,6 +12,10 @@ export const ticketService = {
     return await apiRequest('/tickets/mine', { method: 'GET' });
   },
 
+  async getAll(qs = '') {
+    return await apiRequest(`/tickets${qs}`, { method: 'GET' });
+  },
+
   async scanTicket(qrCode) {
     return await apiRequest('/tickets/scan', {
       method: 'POST',

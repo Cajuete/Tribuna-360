@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { associationService } from '../api/association.service';
 import { clubRequestService } from '../api/clubRequest.service';
 import { authService } from '../api/auth.service';
+import { uploadService } from '../api/upload.service';
 import { useAuth } from '../context/auth-context';
 
 const inputCls = 'input';
@@ -12,7 +13,6 @@ export default function Unete() {
   const [associations, setAssociations] = useState([]);
   const [club, setClub] = useState({
     club_name: '',
-    logo_url: '',
     stadium_name: '',
     stadium_capacity: '',
     association_id: '',
@@ -21,6 +21,8 @@ export default function Unete() {
     run_code: '',
   });
   const [account, setAccount] = useState({ full_name: '', email: '', password: '' });
+  const [logoFile, setLogoFile] = useState(null);
+  const [logoPreview, setLogoPreview] = useState(null);
   const [error, setError] = useState(null);
   const [sending, setSending] = useState(false);
   const { login } = useAuth();
@@ -40,6 +42,37 @@ export default function Unete() {
     setClub({ ...club, association_id: id, department: a ? a.department : '' });
   };
 
+  useEffect(() => {
+    return () => {
+      if (logoPreview) URL.revokeObjectURL(logoPreview);
+    };
+  }, [logoPreview]);
+
+  const handleLogo = e => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    setError(null);
+    if (!file) return;
+
+    const allowed = ['image/png', 'image/jpeg', 'image/webp'];
+    if (!allowed.includes(file.type)) {
+      setError('Formato no permitido. Sube una imagen PNG, JPG o WEBP.');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setError('La imagen supera el máximo de 2 MB.');
+      return;
+    }
+
+    setLogoFile(file);
+    setLogoPreview(URL.createObjectURL(file));
+  };
+
+  const clearLogo = () => {
+    setLogoFile(null);
+    setLogoPreview(null);
+  };
+
   const goStep2 = e => {
     e.preventDefault();
     setError(null);
@@ -57,12 +90,18 @@ export default function Unete() {
     setError(null);
     setSending(true);
     try {
+      let logo_url = null;
+      if (logoFile) {
+        const upload = await uploadService.clubLogo(logoFile);
+        logo_url = upload.data.url;
+      }
+
       await clubRequestService.register({
         ...club,
         club_name: club.club_name.trim(),
         stadium_name: club.stadium_name.trim(),
         stadium_capacity: Number(club.stadium_capacity),
-        logo_url: club.logo_url.trim() || null,
+        logo_url,
         personeria: club.personeria.trim() || null,
         run_code: club.run_code.trim() || null,
         contact_email: account.email.trim(),
@@ -112,13 +151,39 @@ export default function Unete() {
               required
               className={inputCls}
             />
-            <input
-              type="text"
-              placeholder="URL del logo del club (opcional)"
-              value={club.logo_url}
-              onChange={e => setClub({ ...club, logo_url: e.target.value })}
-              className={inputCls}
-            />
+            <div>
+              <label className="block text-sm text-gray-300 mb-2">Escudo del club (opcional)</label>
+              <div className="flex items-center gap-4">
+                <div className="w-20 h-20 rounded-2xl border border-white/15 bg-black/40 flex items-center justify-center overflow-hidden shrink-0">
+                  {logoPreview ? (
+                    <img src={logoPreview} alt="Vista previa del escudo" className="w-full h-full object-contain p-1" />
+                  ) : (
+                    <span className="text-2xl text-gray-500">+</span>
+                  )}
+                </div>
+                <div className="flex-1">
+                  <label className="btn btn-outline py-2 px-4 text-sm cursor-pointer inline-flex">
+                    {logoFile ? 'Cambiar imagen' : 'Subir imagen'}
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      onChange={handleLogo}
+                      className="hidden"
+                    />
+                  </label>
+                  <p className="text-xs text-gray-500 mt-2">PNG, JPG o WEBP · máximo 2 MB</p>
+                  {logoFile && (
+                    <button
+                      type="button"
+                      onClick={clearLogo}
+                      className="text-xs text-red-400 hover:text-red-300 underline mt-1"
+                    >
+                      Quitar imagen
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
             <input
               type="text"
               placeholder="Nombre del estadio"

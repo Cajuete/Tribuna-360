@@ -2,10 +2,16 @@ const { supabase } = require('../config/supabase');
 
 const getProducts = async (req, res) => {
     try {
-        const { data, error } = await supabase
+        let query = supabase
             .from('products')
             .select('*, tenants(name, slug)')
             .order('created_at', { ascending: false });
+
+        if (req.query.tenant_id) {
+            query = query.eq('tenant_id', req.query.tenant_id);
+        }
+
+        const { data, error } = await query;
 
         if (error) throw error;
 

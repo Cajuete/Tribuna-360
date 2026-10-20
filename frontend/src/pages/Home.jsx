@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { matchService } from '../api/match.service';
 import { tenantService } from '../api/tenant.service';
 import { associationService } from '../api/association.service';
+import ClubLogo from '../components/ClubLogo';
 import hero1 from '../assets/images (1).jpg';
 import hero2 from '../assets/images (3).jpg';
 import hero3 from '../assets/images (5).jpg';
@@ -47,6 +48,7 @@ export default function Home() {
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState(null);
+  const [clubs, setClubs] = useState([]);
   const [slide, setSlide] = useState(0);
 
   useEffect(() => {
@@ -62,9 +64,11 @@ export default function Home() {
       tenantService.getAll(),
       associationService.getAll(),
     ]).then(([t, a]) => {
-      const clubs = t.status === 'fulfilled' && t.value.status === 'success' ? t.value.data.length : null;
+      const okTenants = t.status === 'fulfilled' && t.value.status === 'success';
+      const clubsCount = okTenants ? t.value.data.length : null;
       const assocs = a.status === 'fulfilled' && a.value.status === 'success' ? a.value.data.length : null;
-      if (clubs !== null || assocs !== null) setStats({ clubs, assocs });
+      if (okTenants) setClubs(t.value.data);
+      if (clubsCount !== null || assocs !== null) setStats({ clubs: clubsCount, assocs });
     });
   }, []);
 
@@ -159,6 +163,39 @@ export default function Home() {
           </div>
         </section>
       )}
+      {clubs.length > 0 && (
+        <section className="max-w-7xl mx-auto px-6 mt-14" id="clubes">
+          <div className="flex items-end justify-between mb-6">
+            <div>
+              <span className="eyebrow">Clubes</span>
+              <h2 className="section-title text-3xl md:text-4xl mt-1">Entra al espacio de tu club</h2>
+              <p className="text-gray-400 text-sm mt-2">
+                Toca el escudo y descubre sus partidos, su tienda y sus planes de socio.
+              </p>
+            </div>
+            <div className="hairline hidden md:block flex-1 mb-4 ml-6" />
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            {clubs.map(c => (
+              <Link
+                key={c.id}
+                to={`/club/${c.slug}`}
+                className="card card-hover p-5 flex flex-col items-center gap-3 text-center group"
+              >
+                <ClubLogo name={c.name} logoUrl={c.logo_url} size="md" />
+                <span className="font-display font-bold text-sm leading-tight group-hover:text-emerald-400 transition">
+                  {c.name}
+                </span>
+                <span className="text-[0.65rem] uppercase tracking-widest text-gray-500">
+                  {c.department || 'Bolivia'}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section className="max-w-7xl mx-auto px-6 mt-16" id="partidos">
         <div className="flex items-end justify-between mb-6">
           <div>

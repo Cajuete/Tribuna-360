@@ -11,10 +11,13 @@ import Register from './pages/Register';
 import BuyTickets from './pages/BuyTickets';
 import MyTickets from './pages/MyTickets';
 import Tienda from './pages/Tienda';
+import Club from './pages/Club';
 import MyOrders from './pages/MyOrders';
 import Socios from './pages/Socios';
 import MyMembership from './pages/MyMembership';
 import Unete from './pages/Unete';
+import OlvideContrasena from './pages/OlvideContrasena';
+import Restablecer from './pages/Restablecer';
 
 export default function App() {
   return (
@@ -27,7 +30,10 @@ export default function App() {
               <Route path="/" element={<Home />} />
               <Route path="/login" element={<Login />} />
               <Route path="/registro" element={<Register />} />
+              <Route path="/olvide-contrasena" element={<OlvideContrasena />} />
+              <Route path="/restablecer" element={<Restablecer />} />
               <Route path="/unete" element={<Unete />} />
+              <Route path="/club/:slug" element={<Club />} />
               <Route path="/comprar/:matchId" element={<BuyTickets />} />
               <Route path="/tienda" element={<Tienda />} />
               <Route path="/socios" element={<Socios />} />
@@ -43,7 +49,7 @@ export default function App() {
               <Route
                 path="/scanner"
                 element={
-                  <ProtectedRoute roles={['superadmin', 'club_admin', 'gate_operator']}>
+                  <ProtectedRoute roles={['superadmin', 'gate_operator']}>
                     <Scanner />
                   </ProtectedRoute>
                 }

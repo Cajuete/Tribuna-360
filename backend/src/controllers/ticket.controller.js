@@ -95,6 +95,49 @@ const getMyTickets = async (req, res) => {
     }
 };
 
+const getTickets = async (req, res) => {
+    try {
+        const isSuperadmin = req.user.role === 'superadmin';
+        const tenantId = isSuperadmin ? (req.query.tenant_id || null) : req.user.tenant_id;
+
+        let query = supabase
+            .from('tickets')
+            .select('id, price, status, created_at, scanned_at, match_id, zone_id, matches(opponent, match_date, stadium_name), zones(name)')
+            .order('created_at', { ascending: false });
+
+        if (req.query.match_id) {
+            query = query.eq('match_id', req.query.match_id);
+        }
+
+        if (tenantId) {
+            const { data: matches, error: matchError } = await supabase
+                .from('matches')
+                .select('id')
+                .eq('tenant_id', tenantId);
+
+            if (matchError) throw matchError;
+
+            const matchIds = (matches || []).map(m => m.id);
+            if (matchIds.length === 0) {
+                return res.status(200).json({ success: true, data: [] });
+            }
+
+            query = query.in('match_id', matchIds);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        return res.status(200).json({ success: true, data });
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: 'Error al obtener las entradas del club',
+            error: error.message
+        });
+    }
+};
+
 const scanTicket = async (req, res) => {
     try {
         const { qr_code } = req.body;
@@ -152,5 +195,6 @@ const scanTicket = async (req, res) => {
 module.exports = {
     purchaseTicket,
     getMyTickets,
+    getTickets,
     scanTicket
 };
