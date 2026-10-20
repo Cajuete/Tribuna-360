@@ -127,8 +127,17 @@ export default function AdminDashboard() {
   const [zoneForm, setZoneForm] = useState({ name: '', price: '', capacity: '' });
   const [zoneMsg, setZoneMsg] = useState(null);
   const [products, setProducts] = useState([]);
-  const [prodForm, setProdForm] = useState({ name: '', description: '', price: '', stock: '', tenant_id: '' });
+  const [prodForm, setProdForm] = useState({ name: '', description: '', category: '', price: '', stock: '', tenant_id: '' });
   const [prodMsg, setProdMsg] = useState(null);
+  const [prodFile, setProdFile] = useState(null);
+  const [prodPreview, setProdPreview] = useState(null);
+  const [prodListMsg, setProdListMsg] = useState(null);
+  const [editingProductId, setEditingProductId] = useState(null);
+  const [editProductForm, setEditProductForm] = useState({ name: '', description: '', category: '', price: '', stock: '' });
+  const [editProductFile, setEditProductFile] = useState(null);
+  const [editProductPreview, setEditProductPreview] = useState(null);
+  const [productSearch, setProductSearch] = useState('');
+  const [orderFilter, setOrderFilter] = useState('all');
   const [plans, setPlans] = useState([]);
   const [planForm, setPlanForm] = useState({ name: '', price: '', benefits: '', tenant_id: '' });
   const [planMsg, setPlanMsg] = useState(null);
@@ -204,6 +213,13 @@ export default function AdminDashboard() {
   const myProducts = isSuperadmin ? products : products.filter(p => p.tenant_id === user?.tenant_id);
   const myPlans = isSuperadmin ? plans : plans.filter(p => p.tenant_id === user?.tenant_id);
 
+  const productQuery = productSearch.trim().toLowerCase();
+  const visibleProducts = myProducts.filter(p =>
+    !productQuery || [p.name, p.category, p.description].filter(Boolean).join(' ').toLowerCase().includes(productQuery)
+  );
+  const visibleOrders = orderFilter === 'all' ? orders : orders.filter(o => o.status === orderFilter);
+  const orderCount = (status) => status === 'all' ? orders.length : orders.filter(o => o.status === status).length;
+
   const storeRevenue = orders
     .filter(o => o.status === 'paid' || o.status === 'shipped')
     .reduce((sum, o) => sum + Number(o.total || 0), 0);
@@ -238,30 +254,138 @@ export default function AdminDashboard() {
     setSearchParams(next);
   };
 
+  const chooseImage = (file, currentPreview, setFile, setPreview, setError) => {
+    if (!file) return;
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      setError({ ok: false, text: 'Formato no permitido. Usa PNG, JPG o WEBP.' });
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setError({ ok: false, text: 'La imagen supera el máximo de 2 MB.' });
+      return;
+    }
+    if (currentPreview?.startsWith('blob:')) URL.revokeObjectURL(currentPreview);
+    setError(null);
+    setFile(file);
+    setPreview(URL.createObjectURL(file));
+  };
+
+  const pickProdImage = (e) => chooseImage(e.target.files?.[0], prodPreview, setProdFile, setProdPreview, setProdMsg);
+  const clearProdImage = () => {
+    if (prodPreview?.startsWith('blob:')) URL.revokeObjectURL(prodPreview);
+    setProdFile(null);
+    setProdPreview(null);
+  };
+
+  const pickEditProductImage = (e) => chooseImage(e.target.files?.[0], editProductPreview, setEditProductFile, setEditProductPreview, setProdListMsg);
+  const clearEditProductImage = () => {
+    if (editProductPreview?.startsWith('blob:')) URL.revokeObjectURL(editProductPreview);
+    setEditProductFile(null);
+    const original = myProducts.find(p => p.id === editingProductId);
+    setEditProductPreview(original?.image_url || null);
+  };
+
   const handleProdSubmit = async (e) => {
     e.preventDefault();
     setProdMsg(null);
+
+    const price = Number(prodForm.price);
+    const stock = Number.parseInt(prodForm.stock, 10);
+
+    if (!prodForm.name.trim() || !Number.isFinite(price) || price < 0 || !Number.isInteger(stock) || stock < 0) {
+      setProdMsg({ ok: false, text: 'Completa nombre, precio (>=0) y stock (>=0).' });
+      return;
+    }
+
     try {
+      let image_url = null;
+      if (prodFile) {
+        const uploaded = await uploadService.productImage(prodFile);
+        image_url = uploaded.data.url;
+      }
+
       const res = await productService.create({
-        ...prodForm,
+        name: prodForm.name.trim(),
+        description: prodForm.description.trim(),
+        category: prodForm.category.trim(),
+        price,
+        stock,
+        image_url,
         tenant_id: isSuperadmin ? prodForm.tenant_id : undefined,
       });
+
       setProdMsg({ ok: true, text: res.message });
-      setProdForm({ name: '', description: '', price: '', stock: '', tenant_id: '' });
+      setProdForm({ name: '', description: '', category: '', price: '', stock: '', tenant_id: '' });
+      if (prodPreview?.startsWith('blob:')) URL.revokeObjectURL(prodPreview);
+      setProdFile(null);
+      setProdPreview(null);
       loadProducts();
     } catch (err) {
       setProdMsg({ ok: false, text: err.message });
     }
   };
 
-  const handleProdDelete = async (id) => {
-    setProdMsg(null);
+  const handleProdEditStart = (product) => {
+    setEditingProductId(product.id);
+    setEditProductForm({
+      name: product.name || '',
+      description: product.description || '',
+      category: product.category || '',
+      price: product.price ?? '',
+      stock: product.stock ?? '',
+    });
+    setEditProductFile(null);
+    setEditProductPreview(product.image_url || null);
+    setProdListMsg(null);
+  };
+
+  const handleProdUpdate = async (e) => {
+    e.preventDefault();
+    setProdListMsg(null);
+
+    const price = Number(editProductForm.price);
+    const stock = Number.parseInt(editProductForm.stock, 10);
+
+    if (!editProductForm.name.trim() || !Number.isFinite(price) || price < 0 || !Number.isInteger(stock) || stock < 0) {
+      setProdListMsg({ ok: false, text: 'Completa nombre, precio (>=0) y stock (>=0).' });
+      return;
+    }
+
+    const payload = {
+      name: editProductForm.name.trim(),
+      description: editProductForm.description.trim(),
+      price,
+      stock,
+    };
+    if (editProductForm.category.trim()) payload.category = editProductForm.category.trim();
+
     try {
-      const res = await productService.remove(id);
-      setProdMsg({ ok: true, text: res.message });
+      if (editProductFile) {
+        const uploaded = await uploadService.productImage(editProductFile);
+        payload.image_url = uploaded.data.url;
+      }
+
+      const res = await productService.update(editingProductId, payload);
+      setProdListMsg({ ok: true, text: res.message });
+      setEditingProductId(null);
+      setEditProductFile(null);
+      setEditProductPreview(null);
       loadProducts();
     } catch (err) {
-      setProdMsg({ ok: false, text: err.message });
+      setProdListMsg({ ok: false, text: err.message });
+    }
+  };
+
+  const handleProdDelete = async (product) => {
+    if (!window.confirm(`¿Eliminar "${product.name}" de la tienda?`)) return;
+    setProdListMsg(null);
+    try {
+      const res = await productService.remove(product.id);
+      setProdListMsg({ ok: true, text: res.message });
+      if (editingProductId === product.id) setEditingProductId(null);
+      loadProducts();
+    } catch (err) {
+      setProdListMsg({ ok: false, text: err.message });
     }
   };
 
@@ -866,46 +990,145 @@ export default function AdminDashboard() {
             <div>
               <h3 className="text-xl font-semibold mb-3">Productos de la tienda</h3>
               <Notice msg={prodMsg} />
-              <form onSubmit={handleProdSubmit} className="bg-gray-800 p-5 rounded-2xl border border-gray-700 grid grid-cols-1 md:grid-cols-5 gap-3 items-end mb-4">
+              <form onSubmit={handleProdSubmit} className="bg-gray-800 p-5 rounded-2xl border border-gray-700 grid grid-cols-1 md:grid-cols-4 gap-3 items-end mb-4">
                 <label className="md:col-span-2">
-                  <span className={labelCls}>Nombre</span>
-                  <input type="text" value={prodForm.name} onChange={e => setProdForm({ ...prodForm, name: e.target.value })} required className={inputCls} />
-                </label>
-                <label className="md:col-span-2">
-                  <span className={labelCls}>Descripción</span>
-                  <input type="text" value={prodForm.description} onChange={e => setProdForm({ ...prodForm, description: e.target.value })} className={inputCls} />
+                  <span className={labelCls}>Nombre *</span>
+                  <input type="text" placeholder="Camiseta oficial 2026" value={prodForm.name} onChange={e => setProdForm({ ...prodForm, name: e.target.value })} required className={inputCls} />
                 </label>
                 <label>
-                  <span className={labelCls}>Precio Bs</span>
+                  <span className={labelCls}>Categoría</span>
+                  <input type="text" placeholder="Camisetas, Bufandas..." value={prodForm.category} onChange={e => setProdForm({ ...prodForm, category: e.target.value })} className={inputCls} />
+                </label>
+                <label>
+                  <span className={labelCls}>Precio Bs *</span>
                   <input type="number" min="0" step="1" value={prodForm.price} onChange={e => setProdForm({ ...prodForm, price: e.target.value })} required className={inputCls} />
                 </label>
                 <label>
-                  <span className={labelCls}>Stock</span>
+                  <span className={labelCls}>Stock *</span>
                   <input type="number" min="0" step="1" value={prodForm.stock} onChange={e => setProdForm({ ...prodForm, stock: e.target.value })} required className={inputCls} />
+                </label>
+                <label className="md:col-span-3">
+                  <span className={labelCls}>Descripción</span>
+                  <input type="text" placeholder="Detalles del producto" value={prodForm.description} onChange={e => setProdForm({ ...prodForm, description: e.target.value })} className={inputCls} />
+                </label>
+                <label className="md:col-span-4">
+                  <span className={labelCls}>Imagen</span>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="w-16 h-16 rounded-lg overflow-hidden bg-gray-900 border border-gray-700 flex items-center justify-center text-gray-600 text-xs shrink-0">
+                      {prodPreview ? <img src={prodPreview} alt="Vista previa" className="w-full h-full object-cover" /> : 'Sin imagen'}
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <input type="file" accept="image/png,image/jpeg,image/webp" onChange={pickProdImage} className="text-sm text-gray-400 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-gray-700 file:text-white hover:file:bg-gray-600" />
+                      <span className="text-xs text-gray-500">PNG, JPG o WEBP · máximo 2 MB</span>
+                    </div>
+                    {prodPreview && (
+                      <button type="button" onClick={clearProdImage} className="text-xs text-red-400 hover:text-red-300">Quitar imagen</button>
+                    )}
+                  </div>
                 </label>
                 {isSuperadmin && (
                   <label className="md:col-span-2">
-                    <span className={labelCls}>Club</span>
+                    <span className={labelCls}>Club *</span>
                     <select value={prodForm.tenant_id} onChange={e => setProdForm({ ...prodForm, tenant_id: e.target.value })} required className={inputCls}>
                       <option value="">Selecciona...</option>
                       {tenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                     </select>
                   </label>
                 )}
-                <button type="submit" className="md:col-span-5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-2.5 rounded-lg">Agregar producto</button>
+                <button type="submit" className={`${isSuperadmin ? 'md:col-span-2' : 'md:col-span-4'} bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-2.5 rounded-lg`}>Agregar producto</button>
               </form>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                <p className="text-sm text-gray-400">{myProducts.length} producto(s) en la tienda</p>
+                <input type="search" placeholder="Buscar por nombre o categoría..." value={productSearch} onChange={e => setProductSearch(e.target.value)} className={`${inputCls} max-w-xs`} />
+              </div>
+              <Notice msg={prodListMsg} />
+
               <div className="space-y-3">
-                {myProducts.length === 0 && <p className="text-gray-400 text-sm bg-gray-800 border border-gray-700 rounded-xl p-5">No hay productos todavía.</p>}
-                {myProducts.map(p => (
-                  <div key={p.id} className="bg-gray-800 border border-gray-700 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3 text-sm">
-                    <div>
-                      <p className="font-bold">{p.name}</p>
-                      <p className="text-gray-400 text-xs">{p.tenants?.name} · stock {p.stock} · {p.description}</p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-emerald-400 font-semibold">Bs {p.price}</span>
-                      <button type="button" onClick={() => handleProdDelete(p.id)} className="bg-red-800 hover:bg-red-700 text-white text-xs px-3 py-1.5 rounded-lg transition">Eliminar</button>
-                    </div>
+                {visibleProducts.length === 0 && (
+                  <p className="text-gray-400 text-sm bg-gray-800 border border-gray-700 rounded-xl p-5">
+                    {myProducts.length === 0 ? 'No hay productos todavía.' : 'No hay productos que coincidan con la búsqueda.'}
+                  </p>
+                )}
+                {visibleProducts.map(p => (
+                  <div key={p.id} className="bg-gray-800 border border-gray-700 rounded-xl p-4 text-sm">
+                    {editingProductId === p.id ? (
+                      <form onSubmit={handleProdUpdate} className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                        <label className="md:col-span-2">
+                          <span className={labelCls}>Nombre *</span>
+                          <input type="text" value={editProductForm.name} onChange={e => setEditProductForm({ ...editProductForm, name: e.target.value })} required className={inputCls} />
+                        </label>
+                        <label>
+                          <span className={labelCls}>Categoría</span>
+                          <input type="text" value={editProductForm.category} onChange={e => setEditProductForm({ ...editProductForm, category: e.target.value })} className={inputCls} />
+                        </label>
+                        <label>
+                          <span className={labelCls}>Precio Bs *</span>
+                          <input type="number" min="0" step="1" value={editProductForm.price} onChange={e => setEditProductForm({ ...editProductForm, price: e.target.value })} required className={inputCls} />
+                        </label>
+                        <label>
+                          <span className={labelCls}>Stock *</span>
+                          <input type="number" min="0" step="1" value={editProductForm.stock} onChange={e => setEditProductForm({ ...editProductForm, stock: e.target.value })} required className={inputCls} />
+                        </label>
+                        <label className="md:col-span-3">
+                          <span className={labelCls}>Descripción</span>
+                          <input type="text" value={editProductForm.description} onChange={e => setEditProductForm({ ...editProductForm, description: e.target.value })} className={inputCls} />
+                        </label>
+                        <label className="md:col-span-4">
+                          <span className={labelCls}>Imagen</span>
+                          <div className="flex flex-wrap items-center gap-3">
+                            <div className="w-16 h-16 rounded-lg overflow-hidden bg-gray-900 border border-gray-700 flex items-center justify-center text-gray-600 text-xs shrink-0">
+                              {editProductPreview ? <img src={editProductPreview} alt="Vista previa" className="w-full h-full object-cover" /> : 'Sin imagen'}
+                            </div>
+                            <input type="file" accept="image/png,image/jpeg,image/webp" onChange={pickEditProductImage} className="text-sm text-gray-400 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-gray-700 file:text-white hover:file:bg-gray-600" />
+                            {editProductFile && (
+                              <button type="button" onClick={clearEditProductImage} className="text-xs text-red-400 hover:text-red-300">Descartar cambio</button>
+                            )}
+                          </div>
+                        </label>
+                        <div className="md:col-span-4 flex justify-end gap-2">
+                          <button type="button" onClick={() => setEditingProductId(null)} className="bg-gray-700 hover:bg-gray-600 text-white text-sm px-4 py-2 rounded-lg transition">Cancelar</button>
+                          <button type="submit" className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm px-4 py-2 rounded-lg transition">Guardar cambios</button>
+                        </div>
+                      </form>
+                    ) : (
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-14 h-14 rounded-lg overflow-hidden bg-gray-900 border border-gray-700 flex items-center justify-center text-emerald-700 font-bold shrink-0">
+                            {p.image_url ? (
+                              <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
+                            ) : (
+                              p.name.slice(0, 2).toUpperCase()
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="font-bold">{p.name}</p>
+                              {p.category && (
+                                <span className="text-[0.65rem] uppercase tracking-wider px-2 py-0.5 rounded-full bg-sky-900 text-sky-300 border border-sky-800">{p.category}</span>
+                              )}
+                              <span className={`text-[0.65rem] uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                                p.stock === 0
+                                  ? 'bg-red-900 text-red-300 border-red-800'
+                                  : p.stock <= 5
+                                    ? 'bg-yellow-900 text-yellow-300 border-yellow-800'
+                                    : 'bg-emerald-900 text-emerald-300 border-emerald-800'
+                              }`}>
+                                {p.stock === 0 ? 'Agotado' : p.stock <= 5 ? `Stock bajo: ${p.stock}` : `Stock: ${p.stock}`}
+                              </span>
+                            </div>
+                            <p className="text-gray-400 text-xs mt-1">
+                              {p.tenants?.name}{p.description ? ` · ${p.description}` : ''}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-emerald-400 font-semibold">Bs {Number(p.price).toLocaleString('es-BO')}</span>
+                          <button type="button" onClick={() => handleProdEditStart(p)} className="bg-sky-800 hover:bg-sky-700 text-white text-xs px-3 py-1.5 rounded-lg transition">Editar</button>
+                          <button type="button" onClick={() => handleProdDelete(p)} className="bg-red-800 hover:bg-red-700 text-white text-xs px-3 py-1.5 rounded-lg transition">Eliminar</button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -914,16 +1137,43 @@ export default function AdminDashboard() {
             <div>
               <h3 className="text-xl font-semibold mb-3">Pedidos de la tienda</h3>
               <Notice msg={ordersError ? { ok: false, text: ordersError } : null} />
-              {orders.length === 0 && !ordersError && (
-                <p className="text-gray-400 text-sm bg-gray-800 border border-gray-700 rounded-xl p-5">No hay pedidos todavía.</p>
+              <div className="flex flex-wrap gap-2 mb-4">
+                {['all', 'pending', 'paid', 'shipped', 'cancelled'].map(status => (
+                  <button
+                    key={status}
+                    type="button"
+                    onClick={() => setOrderFilter(status)}
+                    className={`text-xs px-3 py-1.5 rounded-lg border transition ${
+                      orderFilter === status
+                        ? 'bg-emerald-600 border-emerald-500 text-white'
+                        : 'bg-gray-800 border-gray-700 text-gray-300 hover:text-white'
+                    }`}
+                  >
+                    {status === 'all' ? 'Todos' : STATUS_LABELS[status]} ({orderCount(status)})
+                  </button>
+                ))}
+              </div>
+              {visibleOrders.length === 0 && !ordersError && (
+                <p className="text-gray-400 text-sm bg-gray-800 border border-gray-700 rounded-xl p-5">
+                  {orders.length === 0 ? 'No hay pedidos todavía.' : 'No hay pedidos con ese estado.'}
+                </p>
               )}
               <div className="space-y-3">
-                {orders.map(o => (
+                {visibleOrders.map(o => (
                   <div key={o.id} className="bg-gray-800 border border-gray-700 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
-                    <div className="text-sm">
-                      <p className="font-bold">{o.products?.name} × {o.quantity}</p>
-                      <p className="text-gray-400 text-xs">{o.users?.full_name || o.users?.email} · {o.tenants?.name} · {new Date(o.created_at).toLocaleString()}</p>
-                      <p className="text-emerald-400 font-semibold mt-1">Bs {o.total}</p>
+                    <div className="flex items-center gap-3 text-sm">
+                      <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-900 border border-gray-700 flex items-center justify-center text-emerald-700 font-bold shrink-0">
+                        {o.products?.image_url ? (
+                          <img src={o.products.image_url} alt={o.products.name} className="w-full h-full object-cover" />
+                        ) : (
+                          (o.products?.name || '?').slice(0, 2).toUpperCase()
+                        )}
+                      </div>
+                      <div>
+                        <p className="font-bold">{o.products?.name} × {o.quantity}</p>
+                        <p className="text-gray-400 text-xs">{o.users?.full_name || o.users?.email} · {o.tenants?.name} · {new Date(o.created_at).toLocaleString()}</p>
+                        <p className="text-emerald-400 font-semibold mt-1">Bs {Number(o.total).toLocaleString('es-BO')}</p>
+                      </div>
                     </div>
                     <div className="flex items-center gap-3">
                       <span className={`text-xs px-3 py-1 rounded-full uppercase font-semibold ${STATUS_STYLES[o.status] || 'bg-gray-700 text-gray-300'}`}>

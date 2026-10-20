@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const multer = require('multer');
-const { uploadClubLogo } = require('../controllers/upload.controller');
+const { uploadClubLogo, uploadProductImage } = require('../controllers/upload.controller');
+const { verifyToken, requireRole } = require('../middlewares/auth.middleware');
 
 const router = Router();
 
@@ -17,8 +18,8 @@ const upload = multer({
     },
 });
 
-const singleLogo = (req, res, next) => {
-    upload.single('logo')(req, res, err => {
+const singleFile = (field) => (req, res, next) => {
+    upload.single(field)(req, res, err => {
         if (!err) return next();
 
         const message = err.code === 'LIMIT_FILE_SIZE'
@@ -31,6 +32,7 @@ const singleLogo = (req, res, next) => {
     });
 };
 
-router.post('/logo', singleLogo, uploadClubLogo);
+router.post('/logo', singleFile('logo'), uploadClubLogo);
+router.post('/product', verifyToken, requireRole(['superadmin', 'club_admin', 'sales_manager']), singleFile('image'), uploadProductImage);
 
 module.exports = router;

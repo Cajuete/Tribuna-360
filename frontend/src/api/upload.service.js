@@ -14,4 +14,22 @@ export const uploadService = {
 
     return data;
   },
+
+  async productImage(file) {
+    const body = new FormData();
+    body.append('image', file);
+
+    const response = await fetch(`${API_BASE_URL}/uploads/product`, {
+      method: 'POST',
+      body,
+      headers: { Authorization: `Bearer ${sessionStorage.getItem('supabase_token') || localStorage.getItem('supabase_token') || ''}` },
+    });
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data.message || 'No se pudo subir la imagen.');
+    }
+
+    return data;
+  },
 };

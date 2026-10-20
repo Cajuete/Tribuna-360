@@ -12,6 +12,13 @@ export const productService = {
     });
   },
 
+  async update(id, payload) {
+    return await apiRequest(`/productos/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  },
+
   async remove(id) {
     return await apiRequest(`/productos/${id}`, { method: 'DELETE' });
   },

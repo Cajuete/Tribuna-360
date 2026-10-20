@@ -101,7 +101,7 @@ const getOrders = async (req, res) => {
     try {
         let query = supabase
             .from('orders')
-            .select('*, users(email, full_name), products(name), tenants(name)')
+            .select('*, users(email, full_name), products(name, image_url), tenants(name)')
             .order('created_at', { ascending: false });
 
         if (req.user.role !== 'superadmin') {

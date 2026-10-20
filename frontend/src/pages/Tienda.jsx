@@ -72,7 +72,12 @@ function ProductCard({ product, token, buying, onBuy }) {
       <div className="h-36 bg-black/40 rounded-xl mb-4 flex items-center justify-center overflow-hidden">
         {product.image_url ? <img src={product.image_url} alt={product.name} className="w-full h-full object-cover rounded-xl" /> : <span className="text-gray-600 text-sm">Sin imagen</span>}
       </div>
-      <span className="text-xs text-gray-500">{product.tenants?.name}</span>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs text-gray-500">{product.tenants?.name}</span>
+        {product.category && (
+          <span className="text-[0.65rem] uppercase tracking-wider px-2 py-0.5 rounded-full bg-sky-900/60 text-sky-300 border border-sky-800">{product.category}</span>
+        )}
+      </div>
       <h3 className="text-xl font-bold mt-1">{product.name}</h3>
       <p className="text-sm text-gray-400 mt-1 flex-1">{product.description}</p>
       <p className="text-emerald-400 font-bold text-2xl mt-3">Bs {product.price}</p>
