@@ -24,15 +24,23 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 
-const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
+const allowedOrigins = (process.env.FRONTEND_URL || '')
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
 
 app.use(cors({
     origin: (origin, callback) => {
-        // Permite requests sin origin (curl, Postman) y orígenes configurados.
-        if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+        // Permite requests sin origin (curl, Postman).
+        if (!origin) return callback(null, true);
+
+        // Permite orígenes configurados explícitamente.
+        if (allowedOrigins.includes(origin)) return callback(null, true);
+
+        // Permite frontends desplegados en Vercel y localhost para evitar bloqueos de CORS.
+        if (/^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin)) return callback(null, true);
+        if (/^http:\/\/localhost(:\d+)?$/i.test(origin)) return callback(null, true);
+
         return callback(new Error('Origen no permitido por CORS.'));
     },
     credentials: true,
