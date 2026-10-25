@@ -4,8 +4,8 @@ const { verifyToken, requireRole } = require('../middlewares/auth.middleware');
 
 const router = Router();
 
-router.post('/:matchId', verifyToken, requireRole(['superadmin', 'club_admin']), createZone);
-router.patch('/:id', verifyToken, requireRole(['superadmin', 'club_admin']), updateZone);
-router.delete('/:id', verifyToken, requireRole(['superadmin', 'club_admin']), deleteZone);
+router.post('/:matchId', verifyToken, requireRole(['superadmin', 'club_admin', 'stadium_manager']), createZone);
+router.patch('/:id', verifyToken, requireRole(['superadmin', 'club_admin', 'stadium_manager']), updateZone);
+router.delete('/:id', verifyToken, requireRole(['superadmin', 'club_admin', 'stadium_manager']), deleteZone);
 
 module.exports = router;

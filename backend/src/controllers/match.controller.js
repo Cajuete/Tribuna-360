@@ -5,7 +5,11 @@ const getMatches = async (req, res) => {
 
         let query = supabase.from('matches').select('*, tenants(name, slug)');
 
-        if (tenant_id) {
+        const STAFF_ROLES = ['club_admin', 'sales_manager', 'stadium_manager', 'financial_auditor', 'customer_support'];
+
+        if (req.user && req.user.tenant_id && STAFF_ROLES.includes(req.user.role)) {
+            query = query.eq('tenant_id', req.user.tenant_id);
+        } else if (tenant_id) {
             query = query.eq('tenant_id', tenant_id);
         }
 
@@ -17,7 +21,7 @@ const getMatches = async (req, res) => {
 
         res.status(200).json({ status: 'success', data });
     } catch (err) {
-        res.status(500).json({ status: 'error', message: 'Error interno del servidor', error: err.message });
+        res.status(500).json({ status: 'error', message: 'Error interno del servidor', error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : err.message) });
     }
 };
 const MATCH_STATUSES = ['scheduled', 'live', 'finished', 'cancelled'];
@@ -38,10 +42,10 @@ const parseMatchday = (value) => {
 
 const createMatch = async (req, res) => {
     try {
-        const { opponent, match_date, stadium_name, competition, matchday } = req.body;
+        const { opponent, match_date, stadium_name, competition, matchday, image_url } = req.body;
         let tenant_id = req.body.tenant_id;
 
-        if (req.user.role === 'club_admin') {
+        if (req.user.role !== 'superadmin') {
             tenant_id = req.user.tenant_id;
         }
 
@@ -68,6 +72,7 @@ const createMatch = async (req, res) => {
 
         if (competition && competition.trim()) payload.competition = competition.trim();
         if (md.value !== null) payload.matchday = md.value;
+        if (image_url !== undefined) payload.image_url = image_url ? String(image_url).trim() : null;
 
         const { data, error } = await supabase
             .from('matches')
@@ -86,7 +91,7 @@ const createMatch = async (req, res) => {
 
         res.status(201).json({ status: 'success', message: 'Partido programado exitosamente', data: data[0] });
     } catch (err) {
-        res.status(500).json({ status: 'error', message: 'Error interno del servidor', error: err.message });
+        res.status(500).json({ status: 'error', message: 'Error interno del servidor', error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : err.message) });
     }
 };
 const updateMatch = async (req, res) => {
@@ -163,6 +168,10 @@ const updateMatch = async (req, res) => {
             patch.status = req.body.status;
         }
 
+        if (has('image_url')) {
+            patch.image_url = req.body.image_url ? String(req.body.image_url).trim() : null;
+        }
+
         if (Object.keys(patch).length === 0) {
             return res.status(400).json({ status: 'error', message: 'No se envió ningún campo para actualizar.' });
         }
@@ -204,7 +213,7 @@ const updateMatch = async (req, res) => {
         return res.status(500).json({
             status: 'error',
             message: 'Error interno en el servidor al procesar la actualización.',
-            error: err.message
+            error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : err.message)
         });
     }
 };
@@ -304,7 +313,7 @@ const deleteMatch = async (req, res) => {
         return res.status(500).json({
             status: 'error',
             message: 'Error crítico en el servidor durante la eliminación.',
-            error: err.message
+            error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : err.message)
         });
     }
 };
@@ -325,7 +334,7 @@ const getMatchById = async (req, res) => {
 
         return res.status(200).json({ status: 'success', data });
     } catch (err) {
-        return res.status(500).json({ status: 'error', message: 'Error interno del servidor', error: err.message });
+        return res.status(500).json({ status: 'error', message: 'Error interno del servidor', error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : err.message) });
     }
 };
 
@@ -343,9 +352,31 @@ const getMatchZones = async (req, res) => {
             return res.status(400).json({ status: 'error', message: error.message });
         }
 
-        return res.status(200).json({ status: 'success', data });
+        const zones = data || [];
+        // Calcular entradas vendidas y disponibles por zona de forma automática
+        const zoneIds = zones.map(z => z.id);
+        let soldByZone = {};
+        if (zoneIds.length) {
+            const { data: tickets, error: ticketError } = await supabase
+                .from('tickets')
+                .select('zone_id')
+                .in('zone_id', zoneIds);
+            if (ticketError) throw ticketError;
+            for (const t of tickets || []) {
+                soldByZone[t.zone_id] = (soldByZone[t.zone_id] || 0) + 1;
+            }
+        }
+
+        const enriched = zones.map(z => {
+            const sold = soldByZone[z.id] || 0;
+            const limit = z.tickets_for_sale != null ? z.tickets_for_sale : z.capacity;
+            const available = Math.max((z.is_enabled ? limit : 0) - sold, 0);
+            return { ...z, sold, available };
+        });
+
+        return res.status(200).json({ status: 'success', data: enriched });
     } catch (err) {
-        return res.status(500).json({ status: 'error', message: 'Error interno del servidor', error: err.message });
+        return res.status(500).json({ status: 'error', message: 'Error interno del servidor', error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : err.message) });
     }
 };
 

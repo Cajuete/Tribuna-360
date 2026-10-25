@@ -21,11 +21,20 @@ export default function MyOrders() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const location = useLocation();
-  const message = location.state?.message;
+  const [msg, setMsg] = useState(location.state?.message);
+
+  useEffect(() => {
+    if (!msg) return;
+    const t = setTimeout(() => setMsg(null), 4000);
+    return () => clearTimeout(t);
+  }, [msg]);
 
   useEffect(() => {
     orderService.getMyOrders()
-      .then(res => { if (res.success) setOrders(res.data); })
+      .then(res => {
+        if (res.success) setOrders(res.data);
+        else setError(res.message || 'No se pudieron cargar los pedidos.');
+      })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -34,7 +43,7 @@ export default function MyOrders() {
     <div className="max-w-4xl mx-auto px-6 py-10">
       <h2 className="text-3xl font-bold mb-6">Mis Pedidos</h2>
 
-      {message && <p className="mb-6 p-3 rounded text-center bg-emerald-900 text-emerald-300">{message}</p>}
+      {msg && <p className="mb-6 p-3 rounded text-center bg-emerald-900 text-emerald-300">{msg}</p>}
       {loading && <p className="text-center text-gray-400 py-8">Cargando pedidos...</p>}
       {error && <p className="p-3 rounded text-center bg-red-900 text-red-300">{error}</p>}
 

@@ -8,8 +8,8 @@ import Logo from '../components/Logo';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const homeFor = (role) => {
-  if (role === 'superadmin' || role === 'club_admin') return '/admin';
   if (role === 'gate_operator') return '/scanner';
+  if (['superadmin', 'club_admin', 'sales_manager', 'stadium_manager', 'financial_auditor', 'customer_support', 'box_office_cashier'].includes(role)) return '/admin';
   return '/';
 };
 

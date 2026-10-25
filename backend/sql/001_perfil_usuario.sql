@@ -1,6 +1,4 @@
--- 001_perfil_usuario.sql
--- Perfil completo para el registro de hinchas.
--- Ejecutar en: Supabase Dashboard -> SQL Editor
+
 
 alter table public.users
   add column if not exists first_name text,

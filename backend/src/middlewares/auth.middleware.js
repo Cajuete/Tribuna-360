@@ -40,7 +40,7 @@ const verifyToken = async (req, res, next) => {
         return res.status(500).json({
             status: 'error',
             message: 'Error interno en la autenticación.',
-            error: err.message
+            error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : err.message)
         });
     }
 };
@@ -71,7 +71,39 @@ const requireRole = (allowedRoles) => {
     };
 };
 
+const optionalAuth = async (req, res, next) => {
+    try {
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return next();
+        }
+
+        const token = authHeader.split(' ')[1];
+        const { data: { user }, error } = await supabase.auth.getUser(token);
+
+        if (error || !user) {
+            return next();
+        }
+
+        const { data: dbUser, error: dbError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('auth_user_id', user.id)
+            .single();
+
+        if (dbError || !dbUser) {
+            return next();
+        }
+
+        req.user = dbUser;
+        next();
+    } catch (err) {
+        return next();
+    }
+};
+
 module.exports = {
     verifyToken,
-    requireRole
+    requireRole,
+    optionalAuth
 };

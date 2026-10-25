@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Trophy } from 'lucide-react';
 import { tenantService } from '../api/tenant.service';
 import { matchService } from '../api/match.service';
 import { productService } from '../api/product.service';
@@ -137,20 +138,23 @@ function ClubSpace({ slug }) {
               {tenant.department && <span className="badge">{tenant.department}</span>}
               {tenant.associations?.name && <span className="badge">{tenant.associations.name}</span>}
             </div>
-            {(tenant.personeria || tenant.run_code) && (
-              <p className="text-xs text-gray-500 mt-3">
-                {tenant.personeria && <>Personería jurídica: {tenant.personeria}. </>}
-                {tenant.run_code && <>RUN: {tenant.run_code}.</>}
-              </p>
+            {tenant.trophies_count > 0 && (
+              <div className="mt-4 inline-flex items-center gap-2 bg-emerald-950/80 border border-emerald-600/50 px-4 py-2 rounded-xl text-emerald-300 font-semibold text-sm">
+                <Trophy className="w-5 h-5 text-amber-400 shrink-0" />
+                <span>{tenant.trophies_count} Títulos / Trofeos oficiales</span>
+                {tenant.trophies_list && <span className="text-xs text-emerald-400/80 font-normal">({tenant.trophies_list})</span>}
+              </div>
             )}
           </div>
-          {canManage && (
-            <Link to="/admin" className="btn btn-primary shrink-0">
-              {isClubAdmin ? 'Panel del club' : 'Panel general'}
-            </Link>
-          )}
         </div>
       </section>
+
+      {tenant.short_history && (
+        <section className="mt-8 card p-6 md:p-8 bg-gradient-to-r from-slate-900 to-slate-950 border border-slate-800">
+          <h2 className="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-2">Historia y Trayectoria</h2>
+          <p className="text-slate-300 leading-relaxed font-medium">{tenant.short_history}</p>
+        </section>
+      )}
 
       <nav className="flex gap-2 mt-8 border-b border-white/10 overflow-x-auto">
         {TABS.map(t => (

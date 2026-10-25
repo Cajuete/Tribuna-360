@@ -165,7 +165,7 @@ const registerClub = async (req, res) => {
         if (createdAuthUser && !createdTenant) {
             await supabaseAuth.auth.admin.deleteUser(createdAuthUser.id).catch(() => {});
         }
-        return res.status(500).json({ status: 'error', message: 'Error al registrar el club', error: error.message });
+        return res.status(500).json({ status: 'error', message: 'Error al registrar el club', error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : error.message) });
     }
 };
 
@@ -185,7 +185,7 @@ const getClubRequests = async (req, res) => {
 
         return res.status(200).json({ status: 'success', data });
     } catch (error) {
-        return res.status(500).json({ status: 'error', message: 'Error al obtener las solicitudes', error: error.message });
+        return res.status(500).json({ status: 'error', message: 'Error al obtener las solicitudes', error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : error.message) });
     }
 };
 

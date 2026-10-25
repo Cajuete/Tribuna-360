@@ -3,7 +3,7 @@ const { supabase } = require('../config/supabase');
 
 const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 const EXTENSIONS = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
-const BUCKETS = { club: 'club-logos', product: 'product-images' };
+const BUCKETS = { club: 'club-logos', product: 'product-images', match: 'match-images' };
 
 const readyBuckets = new Set();
 
@@ -57,12 +57,13 @@ const uploadImage = async (req, res, { bucket, label }) => {
         return res.status(500).json({
             status: 'error',
             message: `No se pudo subir ${label}. Intenta nuevamente.`,
-            error: error.message,
+            error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : error.message),
         });
     }
 };
 
 const uploadClubLogo = (req, res) => uploadImage(req, res, { bucket: BUCKETS.club, label: 'el escudo' });
 const uploadProductImage = (req, res) => uploadImage(req, res, { bucket: BUCKETS.product, label: 'la imagen del producto' });
+const uploadMatchImage = (req, res) => uploadImage(req, res, { bucket: BUCKETS.match, label: 'la imagen del partido' });
 
-module.exports = { uploadClubLogo, uploadProductImage };
+module.exports = { uploadClubLogo, uploadProductImage, uploadMatchImage };

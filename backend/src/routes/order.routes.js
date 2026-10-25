@@ -6,7 +6,7 @@ const router = Router();
 
 router.post('/', verifyToken, createOrder);
 router.get('/mine', verifyToken, getMyOrders);
-router.get('/', verifyToken, requireRole(['superadmin', 'club_admin', 'sales_manager']), getOrders);
+router.get('/', verifyToken, requireRole(['superadmin', 'club_admin', 'sales_manager', 'financial_auditor', 'customer_support']), getOrders);
 router.patch('/:id', verifyToken, requireRole(['superadmin', 'club_admin', 'sales_manager']), updateOrderStatus);
 
 module.exports = router;

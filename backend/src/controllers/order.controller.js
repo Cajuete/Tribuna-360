@@ -72,7 +72,7 @@ const createOrder = async (req, res) => {
         return res.status(500).json({
             success: false,
             message: 'Error al procesar el pedido',
-            error: error.message
+            error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : error.message)
         });
     }
 };
@@ -92,7 +92,7 @@ const getMyOrders = async (req, res) => {
         return res.status(500).json({
             success: false,
             message: 'Error al obtener tus pedidos',
-            error: error.message
+            error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : error.message)
         });
     }
 };
@@ -119,7 +119,7 @@ const getOrders = async (req, res) => {
         return res.status(500).json({
             success: false,
             message: 'Error al obtener los pedidos',
-            error: error.message
+            error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : error.message)
         });
     }
 };
@@ -184,7 +184,7 @@ const updateOrderStatus = async (req, res) => {
         return res.status(500).json({
             success: false,
             message: 'Error al actualizar el pedido',
-            error: error.message
+            error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : error.message)
         });
     }
 };

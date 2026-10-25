@@ -33,7 +33,18 @@ export const membershipService = {
     });
   },
 
+  async updatePlan(id, payload) {
+    return await apiRequest(`/memberships/plans/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+
   async deletePlan(id) {
     return await apiRequest(`/memberships/plans/${id}`, { method: 'DELETE' });
+  },
+
+  async renew(id) {
+    return await apiRequest(`/memberships/${id}/renew`, { method: 'PATCH' });
   },
 };

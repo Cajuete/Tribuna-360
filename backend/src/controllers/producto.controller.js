@@ -14,7 +14,11 @@ const getProducts = async (req, res) => {
             .select('*, tenants(name, slug)')
             .order('created_at', { ascending: false });
 
-        if (req.query.tenant_id) {
+        const STAFF_ROLES = ['club_admin', 'sales_manager', 'stadium_manager', 'financial_auditor', 'customer_support'];
+
+        if (req.user && req.user.tenant_id && STAFF_ROLES.includes(req.user.role)) {
+            query = query.eq('tenant_id', req.user.tenant_id);
+        } else if (req.query.tenant_id) {
             query = query.eq('tenant_id', req.query.tenant_id);
         }
 
@@ -24,7 +28,7 @@ const getProducts = async (req, res) => {
 
         return res.status(200).json({ success: true, data });
     } catch (error) {
-        return res.status(500).json({ success: false, message: 'Error al obtener los productos', error: error.message });
+        return res.status(500).json({ success: false, message: 'Error al obtener los productos', error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : error.message) });
     }
 };
 
@@ -79,7 +83,7 @@ const createProduct = async (req, res) => {
             product: data[0]
         });
     } catch (error) {
-        return res.status(500).json({ success: false, message: 'Error al registrar el producto', error: error.message });
+        return res.status(500).json({ success: false, message: 'Error al registrar el producto', error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : error.message) });
     }
 };
 
@@ -166,7 +170,7 @@ const updateProduct = async (req, res) => {
             product: data
         });
     } catch (error) {
-        return res.status(500).json({ success: false, message: 'Error al actualizar el producto', error: error.message });
+        return res.status(500).json({ success: false, message: 'Error al actualizar el producto', error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : error.message) });
     }
 };
 
@@ -205,7 +209,7 @@ const deleteProduct = async (req, res) => {
 
         return res.status(200).json({ success: true, message: `Producto "${product.name}" eliminado.` });
     } catch (error) {
-        return res.status(500).json({ success: false, message: 'Error al eliminar el producto', error: error.message });
+        return res.status(500).json({ success: false, message: 'Error al eliminar el producto', error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : error.message) });
     }
 };
 

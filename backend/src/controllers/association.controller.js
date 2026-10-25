@@ -11,7 +11,7 @@ const getAssociations = async (req, res) => {
 
         return res.status(200).json({ status: 'success', data });
     } catch (error) {
-        return res.status(500).json({ status: 'error', message: 'Error al obtener las asociaciones', error: error.message });
+        return res.status(500).json({ status: 'error', message: 'Error al obtener las asociaciones', error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : error.message) });
     }
 };
 

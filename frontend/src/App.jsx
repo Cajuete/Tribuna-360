@@ -1,4 +1,5 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { ROUTE_ROLES } from './config/roles';
 import { AuthProvider } from './context/AuthContext';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
@@ -6,6 +7,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Home from './pages/Home';
 import Scanner from './pages/Scanner';
 import AdminDashboard from './pages/AdminDashboard';
+import SalesManagerDashboard from './pages/SalesManagerDashboard';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import BuyTickets from './pages/BuyTickets';
@@ -15,6 +17,8 @@ import Club from './pages/Club';
 import MyOrders from './pages/MyOrders';
 import Socios from './pages/Socios';
 import MyMembership from './pages/MyMembership';
+import MyProfile from './pages/MyProfile';
+import MyHistory from './pages/MyHistory';
 import Unete from './pages/Unete';
 import OlvideContrasena from './pages/OlvideContrasena';
 import Restablecer from './pages/Restablecer';
@@ -40,6 +44,14 @@ export default function App() {
               <Route path="/mis-socio" element={
                 <ProtectedRoute><MyMembership /></ProtectedRoute>
               } />
+               <Route path="/mi-historial" element={
+                 <ProtectedRoute><MyHistory /></ProtectedRoute>
+               } />
+
+               <Route path="/mi-perfil" element={
+                 <ProtectedRoute><MyProfile /></ProtectedRoute>
+               } />
+
               <Route path="/mis-entradas" element={
                 <ProtectedRoute><MyTickets /></ProtectedRoute>
               } />
@@ -49,15 +61,23 @@ export default function App() {
               <Route
                 path="/scanner"
                 element={
-                  <ProtectedRoute roles={['superadmin', 'gate_operator']}>
+                  <ProtectedRoute roles={ROUTE_ROLES.scanner}>
                     <Scanner />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/ventas"
+                element={
+                  <ProtectedRoute roles={ROUTE_ROLES.ventas}>
+                    <SalesManagerDashboard />
                   </ProtectedRoute>
                 }
               />
               <Route
                 path="/admin"
                 element={
-                  <ProtectedRoute roles={['superadmin', 'club_admin']}>
+                  <ProtectedRoute roles={ROUTE_ROLES.admin}>
                     <AdminDashboard />
                   </ProtectedRoute>
                 }

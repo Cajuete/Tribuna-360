@@ -12,7 +12,10 @@ export default function MyMembership() {
 
   const load = () => {
     membershipService.getMine()
-      .then(res => { if (res.status === 'success') setMemberships(res.data); })
+      .then(res => {
+        if (res.status === 'success') setMemberships(res.data);
+        else setError(res.message || 'No se pudieron cargar las membresías.');
+      })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
   };

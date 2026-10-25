@@ -1,21 +1,3 @@
--- ============================================================
--- 005 · RLS como defensa en profundidad + índices de rendimiento
--- Ejecutar en: Supabase Dashboard > SQL Editor
---
--- Contexto:
---   * El backend usa la SERVICE ROLE KEY, que omite RLS. La app
---     sigue funcionando igual después de esta migración.
---   * RLS protege accesos directos a PostgREST/Storage con la
---     ANON KEY o con el JWT de un usuario autenticado.
---   * Política general: catálogo público de solo lectura;
---     cada usuario solo ve sus propios datos; las escrituras
---     quedan reservadas al backend (service_role).
--- ============================================================
-
--- ------------------------------------------------------------
--- 0) Helper: id del usuario de negocio a partir del JWT
---    (public.users.id, no auth.users.id)
--- ------------------------------------------------------------
 create or replace function public.current_user_id()
 returns uuid
 language sql
@@ -29,12 +11,6 @@ as $$
     limit 1;
 $$;
 
-revoke all on function public.current_user_id() from public;
-grant execute on function public.current_user_id() to authenticated;
-
--- ------------------------------------------------------------
--- 1) Índices de rendimiento (tenant_id + claves foráneas)
--- ------------------------------------------------------------
 create index if not exists idx_users_tenant_id
     on public.users (tenant_id);
 create index if not exists idx_users_auth_user_id
@@ -83,9 +59,7 @@ create index if not exists idx_club_requests_association_id
 create index if not exists idx_club_requests_status
     on public.club_requests (status);
 
--- ------------------------------------------------------------
--- 2) Activar RLS en todas las tablas de negocio
--- ------------------------------------------------------------
+
 alter table public.associations      enable row level security;
 alter table public.tenants           enable row level security;
 alter table public.users             enable row level security;
@@ -98,9 +72,6 @@ alter table public.membership_plans  enable row level security;
 alter table public.memberships       enable row level security;
 alter table public.club_requests     enable row level security;
 
--- ------------------------------------------------------------
--- 3) Catálogo público (lectura para anon y authenticated)
--- ------------------------------------------------------------
 drop policy if exists associations_public_read on public.associations;
 create policy associations_public_read
     on public.associations for select
@@ -137,9 +108,6 @@ create policy membership_plans_public_read
     to anon, authenticated
     using (true);
 
--- ------------------------------------------------------------
--- 4) Datos personales: cada usuario ve solo lo suyo
--- ------------------------------------------------------------
 drop policy if exists users_select_own on public.users;
 create policy users_select_own
     on public.users for select
@@ -163,24 +131,3 @@ create policy memberships_select_own
     on public.memberships for select
     to authenticated
     using (user_id = public.current_user_id());
-
--- ------------------------------------------------------------
--- 5) Sin políticas para club_requests: anon/authenticated
---    quedan sin acceso. Solo el backend (service_role) lee/escribe.
---
---    Las escrituras en el resto de tablas también quedan
---    bloqueadas para anon/authenticated: las realiza el backend.
--- ------------------------------------------------------------
-
--- ------------------------------------------------------------
--- 6) Verificación (opcional, se puede ejecutar aparte)
--- ------------------------------------------------------------
--- select tablename, rowsecurity
--- from pg_tables
--- where schemaname = 'public'
--- order by tablename;
---
--- select schemaname, tablename, policyname, roles, cmd, qual
--- from pg_policies
--- where schemaname = 'public'
--- order by tablename, policyname;

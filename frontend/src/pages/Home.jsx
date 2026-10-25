@@ -217,8 +217,8 @@ export default function Home() {
               <article key={m.id} className="card card-hover overflow-hidden flex flex-col">
                 <div className="relative h-36 overflow-hidden">
                   <img
-                    src={CARD_IMGS[i % CARD_IMGS.length]}
-                    alt=""
+                    src={m.image_url || CARD_IMGS[i % CARD_IMGS.length]}
+                    alt={`vs ${m.opponent}`}
                     className="w-full h-full object-cover zoom-img"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-[#0d141c] via-black/30 to-transparent" />
@@ -248,31 +248,7 @@ export default function Home() {
         )}
       </section>
 
-      <section className="max-w-7xl mx-auto px-6 mt-16">
-        <span className="eyebrow">Plataforma</span>
-        <h2 className="section-title text-3xl md:text-4xl mt-1 mb-6">Explora Tribuna 360</h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {[
-            { img: imgSquare, title: 'Entradas con QR', text: 'Elige tu zona del estadio, paga y recibe tu código de acceso al instante.', to: '/', cta: 'Ver partidos' },
-            { img: imgSmall, title: 'Tienda del club', text: 'Camisetas, bufandas y más merchandising oficial de tu club favorito.', to: '/tienda', cta: 'Ver tienda' },
-            { img: imgTiny, title: 'Planes de socio', text: 'Hazte socio y accede a beneficios exclusivos durante todo el año.', to: '/socios', cta: 'Ver planes' },
-          ].map(x => (
-            <Link key={x.title} to={x.to} className="card card-hover overflow-hidden group flex flex-col">
-              <div className="h-40 overflow-hidden">
-                <img src={x.img} alt={x.title} className="w-full h-full object-cover zoom-img" />
-              </div>
-              <div className="p-6 flex flex-col flex-1">
-                <h3 className="font-display text-xl font-bold text-white">{x.title}</h3>
-                <p className="text-sm text-gray-400 mt-2 flex-1">{x.text}</p>
-                <span className="mt-4 text-sm font-bold text-emerald-400 group-hover:text-lime-300 transition">
-                  {x.cta} →
-                </span>
-              </div>
-            </Link>
-          ))}
-        </div>
-      </section>
 
       <section className="max-w-7xl mx-auto px-6 mt-16">
         <div className="relative rounded-3xl overflow-hidden border border-emerald-700/40">
@@ -280,22 +256,13 @@ export default function Home() {
           <div className="absolute inset-0 bg-gradient-to-r from-black/95 via-black/80 to-emerald-900/60" />
           <div className="relative px-8 py-14 md:px-16 flex flex-col md:flex-row items-center gap-8">
             <div className="flex-1 text-center md:text-left">
-              <span className="eyebrow">Para clubes</span>
+              <span className="eyebrow">Pasión con Conciencia</span>
               <h2 className="section-title text-3xl md:text-4xl mt-2">
-                Lleva tu club a la tribuna digital
+                El fútbol se vive con emoción, pero sobre todo con respeto
               </h2>
-              <p className="text-gray-300 mt-3 max-w-xl">
-                Registra tu estadio, tu asociación y tus datos legales. El sistema valida tu solicitud
-                y en minutos tu club estará publicado, listo para vender entradas, productos y socios.
+              <p className="text-slate-300 mt-3 max-w-xl font-medium leading-relaxed">
+                La verdadera grandeza de un hincha está en alentar sin violencia, cuidar los estadios y hacer de cada partido una fiesta familiar. El deporte une familias, fomenta la amistad y construye comunidad. ¡Vivamos la pasión en paz!
               </p>
-              <div className="mt-6 flex flex-wrap gap-3 justify-center md:justify-start">
-                <Link to="/unete" className="btn btn-primary">
-                  Únete a Tribuna 360
-                </Link>
-                <Link to="/login" className="btn btn-outline">
-                  Ya tengo cuenta
-                </Link>
-              </div>
             </div>
             <img
               src={heroPng}

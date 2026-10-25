@@ -4,33 +4,14 @@ import { matchService } from '../api/match.service';
 import { orderService } from '../api/order.service';
 import { membershipService } from '../api/membership.service';
 import { tenantService } from '../api/tenant.service';
+import { saasService } from '../api/saas.service';
 import { userService } from '../api/user.service';
 import { productService } from '../api/product.service';
 import { ticketService } from '../api/ticket.service';
 import { uploadService } from '../api/upload.service';
 import { useAuth } from '../context/auth-context';
+import { ROLE_LABELS, STAFF_ROLES, getAdminTabs } from '../config/roles';
 import ClubLogo from '../components/ClubLogo';
-
-const ROLE_LABELS = {
-  superadmin: 'Superadmin',
-  club_admin: 'Admin de club',
-  sales_manager: 'Gerente de ventas',
-  box_office_cashier: 'Taquillero',
-  stadium_manager: 'Gerente de estadio',
-  financial_auditor: 'Auditor financiero',
-  customer_support: 'Soporte',
-  gate_operator: 'Operador de puerta',
-  fan: 'Hincha',
-};
-
-const STAFF_ROLES = [
-  'sales_manager',
-  'box_office_cashier',
-  'stadium_manager',
-  'financial_auditor',
-  'customer_support',
-  'gate_operator',
-];
 
 const STATUS_STYLES = {
   pending: 'bg-yellow-900 text-yellow-300',
@@ -97,12 +78,23 @@ function StatCard({ label, value, sub }) {
 
 export default function AdminDashboard() {
   const { user } = useAuth();
-  const isSuperadmin = user?.role === 'superadmin';
+  const role = user?.role;
+  const isSuperadmin = role === 'superadmin';
+  const isClubAdmin = role === 'club_admin';
+  const isFullAdmin = isSuperadmin || isClubAdmin;
+  const isSalesManager = role === 'sales_manager';
+  const isAuditor = role === 'financial_auditor';
+  const isSupport = role === 'customer_support';
+  const isCashier = role === 'box_office_cashier';
   const [searchParams, setSearchParams] = useSearchParams();
   const [form, setForm] = useState({ tenant_id: '', opponent: '', competition: '', matchday: '', match_date: '', stadium_name: '' });
+  const [matchFile, setMatchFile] = useState(null);
+  const [matchPreview, setMatchPreview] = useState(null);
   const [draftZones, setDraftZones] = useState([]);
   const [editingMatchId, setEditingMatchId] = useState(null);
   const [editForm, setEditForm] = useState({ opponent: '', competition: '', matchday: '', match_date: '', stadium_name: '', status: 'scheduled' });
+  const [editMatchFile, setEditMatchFile] = useState(null);
+  const [editMatchPreview, setEditMatchPreview] = useState(null);
   const [matchListMsg, setMatchListMsg] = useState(null);
   const [message, setMessage] = useState(null);
   const [orders, setOrders] = useState([]);
@@ -112,6 +104,10 @@ export default function AdminDashboard() {
   const [tickets, setTickets] = useState([]);
   const [ticketsError, setTicketsError] = useState(null);
   const [tenants, setTenants] = useState([]);
+  const [saasOverview, setSaasOverview] = useState(null);
+  const [saasSettings, setSaasSettings] = useState(null);
+  const [saasMsg, setSaasMsg] = useState(null);
+  const [settingsForm, setSettingsForm] = useState({ payment_provider: 'simulado', payment_public_key: '', payment_secret_key: '', platform_commission_rate: 5, currency: 'BOB' });
   const [tenantForm, setTenantForm] = useState({ name: '', slug: '' });
   const [tenantError, setTenantError] = useState(null);
   const [tenantOk, setTenantOk] = useState(null);
@@ -124,7 +120,7 @@ export default function AdminDashboard() {
   const [adminMatches, setAdminMatches] = useState([]);
   const [zoneMatchId, setZoneMatchId] = useState('');
   const [zones, setZones] = useState([]);
-  const [zoneForm, setZoneForm] = useState({ name: '', price: '', capacity: '' });
+  const [zoneForm, setZoneForm] = useState({ name: '', price: '', capacity: '', tickets_for_sale: '', is_enabled: true });
   const [zoneMsg, setZoneMsg] = useState(null);
   const [products, setProducts] = useState([]);
   const [prodForm, setProdForm] = useState({ name: '', description: '', category: '', price: '', stock: '', tenant_id: '' });
@@ -184,15 +180,55 @@ export default function AdminDashboard() {
       .catch(err => setTenantError(err.message));
   };
 
+  const loadSaasOverview = () => {
+    if (!isSuperadmin) return;
+    saasService.getOverview()
+      .then(res => { if (res.status === 'success') setSaasOverview(res.data); })
+      .catch(err => setSaasMsg({ ok: false, text: err.message }));
+  };
+
+  const loadSaasSettings = () => {
+    if (!isSuperadmin) return;
+    saasService.getSettings()
+      .then(res => {
+        if (res.status === 'success') {
+          setSaasSettings(res.data);
+          setSettingsForm({
+            payment_provider: res.data.payment_provider || 'simulado',
+            payment_public_key: res.data.payment_public_key || '',
+            payment_secret_key: '',
+            platform_commission_rate: res.data.platform_commission_rate ?? 5,
+            currency: res.data.currency || 'BOB',
+          });
+        }
+      })
+      .catch(err => setSaasMsg({ ok: false, text: err.message }));
+  };
+
   useEffect(() => {
-    loadProducts();
-    loadPlans();
-    loadOrders();
-    loadMemberships();
-    loadTickets();
     loadTenants();
-    loadUsers();
-  }, [isSuperadmin]);
+    loadAdminMatches();
+    if (isSuperadmin) {
+      loadSaasOverview();
+      loadSaasSettings();
+    }
+    if (!isCashier) {
+      loadProducts();
+      loadPlans();
+    }
+    if (isFullAdmin || isSalesManager || isAuditor || isSupport) {
+      loadOrders();
+    }
+    if (isFullAdmin || isAuditor || isSupport) {
+      loadMemberships();
+    }
+    if (isFullAdmin || isSalesManager || isAuditor || isCashier) {
+      loadTickets();
+    }
+    if (isFullAdmin || isSupport) {
+      loadUsers();
+    }
+  }, [role]);
 
   const loadAdminMatches = () => {
     const qs = !isSuperadmin && user?.tenant_id ? `?tenant_id=${user.tenant_id}` : '';
@@ -230,15 +266,7 @@ export default function AdminDashboard() {
   const membershipRevenue = activeMemberships.reduce((sum, m) => sum + Number(m.membership_plans?.price || 0), 0);
   const upcomingMatches = adminMatches.filter(m => m.status === 'scheduled').length;
 
-  const tabs = [
-    { id: 'resumen', label: 'Resumen' },
-    { id: 'partidos', label: 'Partidos' },
-    { id: 'tienda', label: 'Tienda' },
-    { id: 'socios', label: 'Socios' },
-    ...(!isSuperadmin
-      ? [{ id: 'mi-club', label: 'Mi club' }, { id: 'usuarios', label: 'Personal' }]
-      : [{ id: 'clubes', label: 'Clubes' }, { id: 'usuarios', label: 'Usuarios' }]),
-  ];
+  const tabs = getAdminTabs(role);
 
   const roleOptions = isSuperadmin
     ? Object.entries(ROLE_LABELS)
@@ -271,6 +299,18 @@ export default function AdminDashboard() {
   };
 
   const pickProdImage = (e) => chooseImage(e.target.files?.[0], prodPreview, setProdFile, setProdPreview, setProdMsg);
+  const pickMatchImage = (e) => chooseImage(e.target.files?.[0], matchPreview, setMatchFile, setMatchPreview, setMessage);
+  const clearMatchImage = () => {
+    if (matchPreview?.startsWith('blob:')) URL.revokeObjectURL(matchPreview);
+    setMatchFile(null);
+    setMatchPreview(null);
+  };
+  const pickEditMatchImage = (e) => chooseImage(e.target.files?.[0], editMatchPreview, setEditMatchFile, setEditMatchPreview, setMatchListMsg);
+  const clearEditMatchImage = () => {
+    if (editMatchPreview?.startsWith('blob:')) URL.revokeObjectURL(editMatchPreview);
+    setEditMatchFile(null);
+    setEditMatchPreview(null);
+  };
   const clearProdImage = () => {
     if (prodPreview?.startsWith('blob:')) URL.revokeObjectURL(prodPreview);
     setProdFile(null);
@@ -435,7 +475,7 @@ export default function AdminDashboard() {
     try {
       const res = await matchService.addZone(zoneMatchId, zoneForm);
       setZoneMsg({ ok: true, text: res.message });
-      setZoneForm({ name: '', price: '', capacity: '' });
+      setZoneForm({ name: '', price: '', capacity: '', tickets_for_sale: '', is_enabled: true });
       loadZones(zoneMatchId);
     } catch (err) {
       setZoneMsg({ ok: false, text: err.message });
@@ -501,7 +541,42 @@ export default function AdminDashboard() {
     }
   };
 
-  const addDraftZone = () => setDraftZones(z => [...z, { name: '', price: '', capacity: '' }]);
+  const handleSettingsSubmit = async (e) => {
+    e.preventDefault();
+    setSaasMsg(null);
+    try {
+      const res = await saasService.updateSettings(settingsForm);
+      setSaasMsg({ ok: true, text: res.message || 'Configuración guardada.' });
+      loadSaasSettings();
+      loadSaasOverview();
+    } catch (err) {
+      setSaasMsg({ ok: false, text: err.message });
+    }
+  };
+
+  const handleToggleTenant = async (tenant) => {
+    setSaasMsg(null);
+    try {
+      await tenantService.update(tenant.id, { is_active: !tenant.is_active });
+      setSaasMsg({ ok: true, text: `Club ${!tenant.is_active ? 'activado' : 'desactivado'}.` });
+      loadTenants();
+      loadSaasOverview();
+    } catch (err) {
+      setSaasMsg({ ok: false, text: err.message });
+    }
+  };
+
+  const handleTenantSubscriptionChange = async (tenant, patch) => {
+    setSaasMsg(null);
+    try {
+      await tenantService.update(tenant.id, patch);
+      setSaasMsg({ ok: true, text: 'Suscripción actualizada.' });
+      loadTenants();
+      loadSaasOverview();
+    } catch (err) {
+      setSaasMsg({ ok: false, text: err.message });
+    }
+  };
   const updateDraftZone = (index, key, value) => setDraftZones(z => z.map((zone, i) => i === index ? { ...zone, [key]: value } : zone));
   const removeDraftZone = (index) => setDraftZones(z => z.filter((_, i) => i !== index));
 
@@ -517,7 +592,13 @@ export default function AdminDashboard() {
     }
 
     try {
-      const payload = { ...form, stadium_name: form.stadium_name.trim() || myTenant?.stadium_name || '' };
+      let image_url = null;
+      if (matchFile) {
+        const uploaded = await uploadService.matchImage(matchFile);
+        image_url = uploaded.data.url;
+      }
+
+      const payload = { ...form, stadium_name: form.stadium_name.trim() || myTenant?.stadium_name || '', image_url };
       const res = await matchService.createMatch(payload);
       const match = res.data;
       let zoneErrors = 0;
@@ -527,6 +608,8 @@ export default function AdminDashboard() {
             name: zone.name.trim(),
             price: Number(zone.price),
             capacity: Number(zone.capacity),
+            tickets_for_sale: zone.tickets_for_sale === '' ? Number(zone.capacity) : Number(zone.tickets_for_sale),
+            is_enabled: zone.is_enabled !== false,
           });
         } catch {
           zoneErrors++;
@@ -547,6 +630,9 @@ export default function AdminDashboard() {
         stadium_name: myTenant?.stadium_name || '',
       }));
       setDraftZones([]);
+      if (matchPreview?.startsWith('blob:')) URL.revokeObjectURL(matchPreview);
+      setMatchFile(null);
+      setMatchPreview(null);
       loadAdminMatches();
     } catch (err) {
       setMessage({ ok: false, text: err.message });
@@ -563,6 +649,8 @@ export default function AdminDashboard() {
       stadium_name: m.stadium_name || '',
       status: m.status || 'scheduled',
     });
+    setEditMatchFile(null);
+    setEditMatchPreview(m.image_url || null);
     setMatchListMsg(null);
   };
 
@@ -573,6 +661,12 @@ export default function AdminDashboard() {
     if (!String(payload.competition || '').trim()) delete payload.competition;
     if (String(payload.matchday ?? '').trim() === '') delete payload.matchday;
     try {
+      if (editMatchFile) {
+        const uploaded = await uploadService.matchImage(editMatchFile);
+        payload.image_url = uploaded.data.url;
+      } else if (editMatchPreview === null) {
+        payload.image_url = null;
+      }
       const res = await matchService.updateMatch(editingMatchId, payload);
       setMatchListMsg({ ok: true, text: res.message });
       setEditingMatchId(null);
@@ -691,36 +785,9 @@ export default function AdminDashboard() {
               <p className="alert-error">
                 {ticketsError || ordersError || membershipsError}
               </p>
-            )}
-
-            <div>
-              <h3 className="text-xl font-semibold mb-3">Accesos rápidos</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {[
-                  { id: 'partidos', label: 'Programar partido' },
-                  { id: 'tienda', label: 'Agregar producto' },
-                  { id: 'socios', label: 'Crear plan de socio' },
-                  ...(!isSuperadmin ? [{ id: 'mi-club', label: 'Editar mi club' }] : []),
-                ].map(x => (
-                  <button
-                    key={x.id}
-                    type="button"
-                    onClick={() => setTab(x.id)}
-                    className="card card-hover p-4 text-sm font-semibold text-left"
-                  >
-                    {x.label} →
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
+            )}            <div>
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-xl font-semibold">Últimos pedidos</h3>
-                <button type="button" onClick={() => setTab('tienda')} className="text-sm text-emerald-400 hover:text-emerald-300">
-                  Ver todos →
-                </button>
-              </div>
+                <h3 className="text-xl font-semibold">Últimos pedidos</h3>              </div>
               {orders.length === 0 ? (
                 <p className="text-gray-400 text-sm bg-gray-800 border border-gray-700 rounded-xl p-5">No hay pedidos todavía.</p>
               ) : (
@@ -742,11 +809,7 @@ export default function AdminDashboard() {
 
             <div>
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-xl font-semibold">Próximos partidos</h3>
-                <button type="button" onClick={() => setTab('partidos')} className="text-sm text-emerald-400 hover:text-emerald-300">
-                  Gestionar →
-                </button>
-              </div>
+                <h3 className="text-xl font-semibold">Próximos partidos</h3>              </div>
               {adminMatches.length === 0 ? (
                 <p className="text-gray-400 text-sm bg-gray-800 border border-gray-700 rounded-xl p-5">Aún no hay partidos.</p>
               ) : (
@@ -814,6 +877,22 @@ export default function AdminDashboard() {
                   <input type="text" placeholder="Estadio Hernando Siles" value={form.stadium_name || myTenant?.stadium_name || ''} onChange={e => setForm({ ...form, stadium_name: e.target.value })} required className={inputCls} />
                 </label>
 
+                <label className="md:col-span-2">
+                  <span className={labelCls}>Imagen del partido</span>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="w-20 h-20 rounded-lg overflow-hidden bg-gray-900 border border-gray-700 flex items-center justify-center text-gray-600 text-xs shrink-0">
+                      {matchPreview ? <img src={matchPreview} alt="Vista previa" className="w-full h-full object-cover" /> : 'Sin imagen'}
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <input type="file" accept="image/png,image/jpeg,image/webp" onChange={pickMatchImage} className="text-sm text-gray-400 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-gray-700 file:text-white hover:file:bg-gray-600" />
+                      <span className="text-xs text-gray-500">PNG, JPG o WEBP · máximo 2 MB</span>
+                    </div>
+                    {matchPreview && (
+                      <button type="button" onClick={clearMatchImage} className="text-xs text-red-400 hover:text-red-300">Quitar imagen</button>
+                    )}
+                  </div>
+                </label>
+
                 <div className="md:col-span-2 border-t border-gray-700 pt-4">
                   <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
                     <div>
@@ -830,18 +909,26 @@ export default function AdminDashboard() {
                   ) : (
                     <div className="space-y-2">
                       {draftZones.map((zone, index) => (
-                        <div key={index} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-end">
-                          <label className="md:col-span-5">
+<div key={index} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-end">
+                          <label className="md:col-span-4">
                             <span className={labelCls}>Zona</span>
                             <input type="text" placeholder="Curva Sur, Butacas..." value={zone.name} onChange={e => updateDraftZone(index, 'name', e.target.value)} className={inputCls} />
                           </label>
-                          <label className="md:col-span-3">
+                          <label className="md:col-span-2">
                             <span className={labelCls}>Precio Bs</span>
                             <input type="number" min="0" step="1" placeholder="50" value={zone.price} onChange={e => updateDraftZone(index, 'price', e.target.value)} className={inputCls} />
                           </label>
-                          <label className="md:col-span-3">
+                          <label className="md:col-span-2">
                             <span className={labelCls}>Aforo</span>
                             <input type="number" min="1" step="1" placeholder="1000" value={zone.capacity} onChange={e => updateDraftZone(index, 'capacity', e.target.value)} className={inputCls} />
+                          </label>
+                          <label className="md:col-span-2">
+                            <span className={labelCls}>A la venta</span>
+                            <input type="number" min="0" step="1" placeholder="1000" value={zone.tickets_for_sale} onChange={e => updateDraftZone(index, 'tickets_for_sale', e.target.value)} className={inputCls} />
+                          </label>
+                          <label className="md:col-span-1 flex items-center gap-1 text-xs text-gray-300">
+                            <input type="checkbox" checked={zone.is_enabled !== false} onChange={e => updateDraftZone(index, 'is_enabled', e.target.checked)} />
+                            Hab.
                           </label>
                           <button type="button" onClick={() => removeDraftZone(index)} aria-label="Quitar zona" className="md:col-span-1 bg-red-800 hover:bg-red-700 text-white py-3 rounded-lg">×</button>
                         </div>
@@ -888,6 +975,20 @@ export default function AdminDashboard() {
                           <label>
                             <span className={labelCls}>Estadio *</span>
                             <input type="text" value={editForm.stadium_name} onChange={e => setEditForm({ ...editForm, stadium_name: e.target.value })} required className={inputCls} />
+                          </label>
+<label className="md:col-span-2">
+                            <span className={labelCls}>Imagen del partido</span>
+                            <div className="flex flex-wrap items-center gap-3">
+                              <div className="w-16 h-16 rounded-lg overflow-hidden bg-gray-900 border border-gray-700 flex items-center justify-center text-gray-600 text-xs shrink-0">
+                                {editMatchPreview ? <img src={editMatchPreview} alt="Vista previa" className="w-full h-full object-cover" /> : 'Sin imagen'}
+                              </div>
+                              <div className="flex flex-col gap-1">
+                                <input type="file" accept="image/png,image/jpeg,image/webp" onChange={pickEditMatchImage} className="text-sm text-gray-400 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-gray-700 file:text-white hover:file:bg-gray-600" />
+                              </div>
+                              {editMatchPreview && (
+                                <button type="button" onClick={clearEditMatchImage} className="text-xs text-red-400 hover:text-red-300">Quitar imagen</button>
+                              )}
+                            </div>
                           </label>
                           <label>
                             <span className={labelCls}>Estado</span>
@@ -957,13 +1058,16 @@ export default function AdminDashboard() {
                       {zones.length === 0 && <p className="text-gray-400 text-sm">Este partido no tiene zonas todavía.</p>}
                       {zones.map(z => (
                         <div key={z.id} className="bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-sm">
-                          <span><span className="font-bold">{z.name}</span> · Bs {z.price} · aforo {z.capacity}</span>
+                          <span>
+                            <span className="font-bold">{z.name}</span> · Bs {z.price} · aforo {z.capacity} · a la venta {z.tickets_for_sale ?? z.capacity} · vendidas {z.sold ?? 0} · disponibles {z.available ?? 0}
+                            {!z.is_enabled && <span className="ml-2 text-red-400 font-semibold">(deshabilitada)</span>}
+                          </span>
                           <button type="button" onClick={() => handleZoneDelete(z.id)} className="bg-red-800 hover:bg-red-700 text-white text-xs px-3 py-1.5 rounded-lg transition">Eliminar</button>
                         </div>
                       ))}
                     </div>
 
-                    <form onSubmit={handleZoneSubmit} className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end border-t border-gray-700 pt-4">
+                    <form onSubmit={handleZoneSubmit} className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end border-t border-gray-700 pt-4">
                       <label className="md:col-span-2">
                         <span className={labelCls}>Nombre (Curva Sur, Butacas...)</span>
                         <input type="text" value={zoneForm.name} onChange={e => setZoneForm({ ...zoneForm, name: e.target.value })} required className={inputCls} />
@@ -976,7 +1080,15 @@ export default function AdminDashboard() {
                         <span className={labelCls}>Aforo</span>
                         <input type="number" min="1" step="1" value={zoneForm.capacity} onChange={e => setZoneForm({ ...zoneForm, capacity: e.target.value })} required className={inputCls} />
                       </label>
-                      <button type="submit" className="md:col-span-4 bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-2.5 rounded-lg">Agregar zona</button>
+                      <label>
+                        <span className={labelCls}>A la venta</span>
+                        <input type="number" min="0" step="1" value={zoneForm.tickets_for_sale} onChange={e => setZoneForm({ ...zoneForm, tickets_for_sale: e.target.value })} className={inputCls} />
+                      </label>
+                      <label className="flex items-center gap-2 text-xs text-gray-300">
+                        <input type="checkbox" checked={zoneForm.is_enabled !== false} onChange={e => setZoneForm({ ...zoneForm, is_enabled: e.target.checked })} />
+                        Habilitada
+                      </label>
+                      <button type="submit" className="md:col-span-5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-2.5 rounded-lg">Agregar zona</button>
                     </form>
                   </>
                 )}
@@ -1269,6 +1381,81 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {tab === 'pedidos' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xl font-semibold">Pedidos</h3>
+            </div>
+            <Notice msg={ordersError ? { ok: false, text: ordersError } : null} />
+            <div className="flex flex-wrap gap-2 mb-4">
+              {['all', 'pending', 'paid', 'shipped', 'cancelled'].map(status => (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => setOrderFilter(status)}
+                  className={`text-xs px-3 py-1.5 rounded-lg border transition ${
+                    orderFilter === status
+                      ? 'bg-emerald-600 border-emerald-500 text-white'
+                      : 'bg-gray-800 border-gray-700 text-gray-300 hover:text-white'
+                  }`}
+                >
+                  {status === 'all' ? 'Todos' : STATUS_LABELS[status]} ({orderCount(status)})
+                </button>
+              ))}
+            </div>
+            {visibleOrders.length === 0 && !ordersError && (
+              <p className="text-gray-400 text-sm bg-gray-800 border border-gray-700 rounded-xl p-5">
+                {orders.length === 0 ? 'No hay pedidos todavía.' : 'No hay pedidos con ese estado.'}
+              </p>
+            )}
+            <div className="space-y-3">
+              {visibleOrders.map(o => (
+                <div key={o.id} className="bg-gray-800 border border-gray-700 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 text-sm">
+                    <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-900 border border-gray-700 flex items-center justify-center text-emerald-700 font-bold shrink-0">
+                      {o.products?.image_url ? (
+                        <img src={o.products.image_url} alt={o.products.name} className="w-full h-full object-cover" />
+                      ) : (
+                        (o.products?.name || '?').slice(0, 2).toUpperCase()
+                      )}
+                    </div>
+                    <div>
+                      <p className="font-bold">{o.products?.name} × {o.quantity}</p>
+                      <p className="text-gray-400 text-xs">{o.users?.full_name || o.users?.email} · {o.tenants?.name} · {new Date(o.created_at).toLocaleString()}</p>
+                      <p className="text-emerald-400 font-semibold mt-1">Bs {Number(o.total).toLocaleString('es-BO')}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={`text-xs px-3 py-1 rounded-full uppercase font-semibold ${STATUS_STYLES[o.status] || 'bg-gray-700 text-gray-300'}`}>
+                      {STATUS_LABELS[o.status] || o.status}
+                    </span>
+                    {o.status === 'paid' && (
+                      <button type="button" onClick={() => handleStatus(o.id, 'shipped')} className="bg-sky-700 hover:bg-sky-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition">Despachar</button>
+                    )}
+                    {o.status === 'pending' && (
+                      <>
+                        <button type="button" onClick={() => handleStatus(o.id, 'paid')} className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition">Marcar pagado</button>
+                        <button type="button" onClick={() => handleStatus(o.id, 'cancelled')} className="bg-red-800 hover:bg-red-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition">Cancelar</button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {tab === 'reportes' && (
+          <div className="space-y-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <StatCard label="Entradas vendidas" value={`Bs ${ticketRevenue.toLocaleString()}`} sub={`${tickets.length} entrada(s) · ${ticketsUsed} ya escaneada(s)`} />
+              <StatCard label="Ventas de tienda" value={`Bs ${storeRevenue.toLocaleString()}`} sub={`${pendingOrders} pedido(s) pendiente(s)`} />
+              <StatCard label="Socios activos" value={activeMemberships.length} sub={`Bs ${membershipRevenue.toLocaleString()} / mes`} />
+              <StatCard label="Partidos programados" value={upcomingMatches} sub={`${adminMatches.length} partido(s) en total`} />
+            </div>
+          </div>
+        )}
+
         {tab === 'mi-club' && myTenant && (
           <ClubProfileForm key={myTenant.id} tenant={myTenant} onSaved={loadTenants} />
         )}
@@ -1312,6 +1499,100 @@ export default function AdminDashboard() {
                   </Link>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+{tab === 'plataforma' && isSuperadmin && (
+          <div className="space-y-8">
+            <div>
+              <h3 className="text-xl font-semibold mb-3">Panel Multi-Tenant SaaS</h3>
+              <Notice msg={saasMsg} />
+              {saasOverview?.totals && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                  <StatCard label="Clubes" value={saasOverview.totals.clubs} sub={`${saasOverview.totals.active_clubs} activos`} />
+                  <StatCard label="Partidos" value={saasOverview.totals.matches} />
+                  <StatCard label="Entradas vendidas" value={saasOverview.totals.tickets_sold} sub={`Bs ${saasOverview.totals.ticket_revenue}`} />
+                  <StatCard label="Ingresos totales" value={`Bs ${saasOverview.totals.total_revenue}`} sub={`${saasOverview.totals.orders_count} pedidos tienda`} />
+                </div>
+              )}
+            </div>
+
+            <div className="bg-gray-800 p-5 rounded-2xl border border-gray-700">
+              <h4 className="font-semibold mb-3">Configuración global de pasarela de pago y comisiones</h4>
+              <form onSubmit={handleSettingsSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-3 items-end">
+                <label>
+                  <span className={labelCls}>Proveedor de pago</span>
+                  <input type="text" value={settingsForm.payment_provider} onChange={e => setSettingsForm({ ...settingsForm, payment_provider: e.target.value })} className={inputCls} />
+                </label>
+                <label>
+                  <span className={labelCls}>Moneda</span>
+                  <input type="text" value={settingsForm.currency} onChange={e => setSettingsForm({ ...settingsForm, currency: e.target.value })} className={inputCls} />
+                </label>
+                <label>
+                  <span className={labelCls}>Clave pública</span>
+                  <input type="text" value={settingsForm.payment_public_key} onChange={e => setSettingsForm({ ...settingsForm, payment_public_key: e.target.value })} className={inputCls} />
+                </label>
+                <label>
+                  <span className={labelCls}>Clave secreta (dejar vacío para mantener)</span>
+                  <input type="password" value={settingsForm.payment_secret_key} onChange={e => setSettingsForm({ ...settingsForm, payment_secret_key: e.target.value })} className={inputCls} />
+                </label>
+                <label>
+                  <span className={labelCls}>Comisión SaaS global (%)</span>
+                  <input type="number" min="0" max="100" step="0.01" value={settingsForm.platform_commission_rate} onChange={e => setSettingsForm({ ...settingsForm, platform_commission_rate: e.target.value })} className={inputCls} />
+                </label>
+                <button type="submit" className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 rounded-lg">Guardar configuración</button>
+              </form>
+            </div>
+
+<div>
+              <h4 className="font-semibold mb-3">Clubes afiliados y volumen de ventas</h4>
+              <div className="space-y-3">
+                {(saasOverview?.tenants || []).map(t => (
+                  <div key={t.id} className="bg-gray-800 border border-gray-700 rounded-xl p-4 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="font-bold">{t.name}</p>
+                        <p className="text-xs text-gray-400">slug: {t.slug} · {t.is_active ? 'Activo' : 'Inactivo'} · plan {t.subscription_plan} · {t.subscription_status}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" onClick={() => handleToggleTenant(t)} className={`${t.is_active ? 'bg-red-700 hover:bg-red-600' : 'bg-emerald-700 hover:bg-emerald-600'} text-white text-xs px-3 py-1.5 rounded-lg`}>
+                          {t.is_active ? 'Desactivar' : 'Activar'}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
+                      <div className="bg-gray-900 rounded p-2"><span className="text-gray-500">Partidos</span><p className="font-bold">{t.matches_count}</p></div>
+                      <div className="bg-gray-900 rounded p-2"><span className="text-gray-500">Entradas</span><p className="font-bold">{t.tickets_sold}</p></div>
+                      <div className="bg-gray-900 rounded p-2"><span className="text-gray-500">Rev. entradas</span><p className="font-bold">Bs {t.ticket_revenue}</p></div>
+                      <div className="bg-gray-900 rounded p-2"><span className="text-gray-500">Pedidos tienda</span><p className="font-bold">{t.orders_count}</p></div>
+                      <div className="bg-gray-900 rounded p-2"><span className="text-gray-500">Rev. total</span><p className="font-bold">Bs {t.total_revenue}</p></div>
+                    </div>
+                    <div className="flex flex-wrap gap-2 items-end">
+                      <label className="min-w-32">
+                        <span className={labelCls}>Estado suscripción</span>
+                        <select value={t.subscription_status} onChange={e => handleTenantSubscriptionChange(t, { subscription_status: e.target.value })} className={inputCls}>
+                          <option value="trial">Prueba</option>
+                          <option value="active">Activa</option>
+                          <option value="suspended">Suspendida</option>
+                          <option value="cancelled">Cancelada</option>
+                        </select>
+                      </label>
+                      <label className="min-w-32">
+                        <span className={labelCls}>Plan</span>
+                        <input type="text" defaultValue={t.subscription_plan} onBlur={e => handleTenantSubscriptionChange(t, { subscription_plan: e.target.value })} className={inputCls} />
+                      </label>
+                      <label className="min-w-32">
+                        <span className={labelCls}>Comisión override (%)</span>
+                        <input type="number" min="0" max="100" step="0.01" defaultValue={t.commission_rate ?? ''} onBlur={e => handleTenantSubscriptionChange(t, { commission_rate: e.target.value === '' ? null : e.target.value })} className={inputCls} />
+                      </label>
+                    </div>
+                  </div>
+                ))}
+                {(!saasOverview?.tenants || saasOverview.tenants.length === 0) && (
+                  <p className="text-gray-400 text-sm">No hay clubes registrados.</p>
+                )}
+              </div>
             </div>
           </div>
         )}

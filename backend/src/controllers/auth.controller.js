@@ -10,7 +10,7 @@ const checkAuthStatus = async (req, res) => {
             return res.status(400).json({
                 status: 'error',
                 message: 'Error al conectar con la base de datos multi-tenant',
-                details: error.message
+                details: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : error.message)
             });
         }
 
@@ -23,7 +23,7 @@ const checkAuthStatus = async (req, res) => {
         res.status(500).json({
             status: 'error',
             message: 'Error interno del servidor',
-            error: err.message
+            error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : err.message)
         });
     }
 };
@@ -163,7 +163,7 @@ const register = async (req, res) => {
         return res.status(500).json({
             status: 'error',
             message: 'Error interno del servidor al registrar.',
-            error: err.message
+            error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : err.message)
         });
     }
 };
@@ -216,7 +216,7 @@ const login = async (req, res) => {
         return res.status(500).json({
             status: 'error',
             message: 'Error interno del servidor al iniciar sesión.',
-            error: err.message
+            error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : err.message)
         });
     }
 };
@@ -251,7 +251,7 @@ const forgotPassword = async (req, res) => {
             return res.status(400).json({
                 status: 'error',
                 message: 'No se pudo enviar el correo de recuperación. Inténtalo de nuevo en unos minutos.',
-                details: error.message
+                details: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : error.message)
             });
         }
 
@@ -263,7 +263,7 @@ const forgotPassword = async (req, res) => {
         return res.status(500).json({
             status: 'error',
             message: 'Error interno del servidor al solicitar la recuperación.',
-            error: err.message
+            error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : err.message)
         });
     }
 };
@@ -315,7 +315,7 @@ const resetPassword = async (req, res) => {
         return res.status(500).json({
             status: 'error',
             message: 'Error interno del servidor al restablecer la contraseña.',
-            error: err.message
+            error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : err.message)
         });
     }
 };

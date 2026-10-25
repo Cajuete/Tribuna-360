@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const multer = require('multer');
-const { uploadClubLogo, uploadProductImage } = require('../controllers/upload.controller');
+const { uploadClubLogo, uploadProductImage, uploadMatchImage } = require('../controllers/upload.controller');
 const { verifyToken, requireRole } = require('../middlewares/auth.middleware');
 
 const router = Router();
@@ -34,5 +34,6 @@ const singleFile = (field) => (req, res, next) => {
 
 router.post('/logo', singleFile('logo'), uploadClubLogo);
 router.post('/product', verifyToken, requireRole(['superadmin', 'club_admin', 'sales_manager']), singleFile('image'), uploadProductImage);
+router.post('/match', verifyToken, requireRole(['superadmin', 'club_admin', 'stadium_manager']), singleFile('image'), uploadMatchImage);
 
 module.exports = router;

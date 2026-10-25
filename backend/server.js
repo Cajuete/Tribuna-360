@@ -12,15 +12,32 @@ const tenantRoutes = require('./src/routes/tenant.routes');
 const userRoutes = require('./src/routes/user.routes');
 const zoneRoutes = require('./src/routes/zone.routes');
 const associationRoutes = require('./src/routes/association.routes');
+const promotionRoutes = require('./src/routes/promotion.routes');
+const packageRoutes = require('./src/routes/package.routes');
+const sponsorRoutes = require('./src/routes/sponsor.routes');
+const gateRoutes = require('./src/routes/gate.routes');
 const clubRequestRoutes = require('./src/routes/clubRequest.routes');
 const uploadRoutes = require('./src/routes/upload.routes');
+const saasRoutes = require('./src/routes/saas.routes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 
-app.use(cors());
-app.use(express.json());
+const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+app.use(cors({
+    origin: (origin, callback) => {
+        // Permite requests sin origin (curl, Postman) y orígenes configurados.
+        if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+        return callback(new Error('Origen no permitido por CORS.'));
+    },
+    credentials: true,
+}));
+app.use(express.json({ limit: '1mb' }));
 
 app.get('/', (req, res) => {
     res.send('Bienvenido a Tribuna 360');
@@ -57,7 +74,12 @@ app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/zones', zoneRoutes);
 app.use('/api/v1/associations', associationRoutes);
 app.use('/api/v1/club-requests', clubRequestRoutes);
+app.use('/api/v1/promotions', promotionRoutes);
+app.use('/api/v1/packages', packageRoutes);
+app.use('/api/v1/sponsors', sponsorRoutes);
+app.use('/api/v1/gates', gateRoutes);
 app.use('/api/v1/uploads', uploadRoutes);
+app.use('/api/v1/saas', saasRoutes);
 app.listen(PORT, () => {
   console.log(`Servidor backend ejecutándose en http://localhost:${PORT}`);
 });
