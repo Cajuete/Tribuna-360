@@ -239,6 +239,44 @@ select.input option {
 }
 }
 
+  /* ---------- responsive safety ---------- */
+  html, body, #root {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  img, video, canvas, svg, iframe {
+    max-width: 100%;
+    height: auto;
+  }
+
+  table {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .flex.items-center.justify-between {
+    flex-wrap: wrap;
+    row-gap: 0.5rem;
+  }
+
+  @media (max-width: 640px) {
+    .min-w-40, .min-w-32 {
+      min-width: 0 !important;
+      width: 100% !important;
+    }
+    .w-\[600px\] {
+      width: 280px !important;
+      height: 280px !important;
+    }
+    .w-80 {
+      width: calc(100vw - 2rem) !important;
+      max-width: calc(100vw - 2rem) !important;
+    }
+  }
+
 @media print {
   body {
     background: #ffffff !important;
