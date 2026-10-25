@@ -1,0 +1,25 @@
+# Uso:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Requiere variables de entorno en el shell o en un archivo .env en la raíz:
+#   FRONTEND_URL=https://tudominio.com
+#   VITE_API_BASE_URL=https://api.tudominio.com/api/v1
+#   (y las de Supabase en backend/.env)
+
+version: "3.9"
+
+services:
+  backend:
+    environment:
+      NODE_ENV: production
+      FRONTEND_URL: ${FRONTEND_URL}
+    # En producción normalmente se pone detrás de un reverse proxy (Nginx/Traefik/Caddy)
+    # y no se expone el puerto 3000 directamente.
+    ports: []
+
+  frontend:
+    build:
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL}
+    ports: []
+    # El reverse proxy sirve el frontend en 80/443.
