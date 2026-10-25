@@ -579,6 +579,7 @@ export default function AdminDashboard() {
   };
   const updateDraftZone = (index, key, value) => setDraftZones(z => z.map((zone, i) => i === index ? { ...zone, [key]: value } : zone));
   const removeDraftZone = (index) => setDraftZones(z => z.filter((_, i) => i !== index));
+  const addDraftZone = () => setDraftZones(z => [...z, { name: '', price: '', capacity: '', tickets_for_sale: '', is_enabled: true }]);
 
   const handleMatchSubmit = async (e) => {
     e.preventDefault();
