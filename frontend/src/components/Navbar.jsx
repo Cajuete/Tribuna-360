@@ -124,11 +124,8 @@ export default function Navbar() {
   return (
     <header className="sticky top-0 z-50 glass border-b border-white/10 shadow-xl">
       <div className="max-w-7xl mx-auto flex justify-between items-center gap-4 px-6 py-4">
-        <Link to="/" aria-label="Tribuna 360 — inicio" className="shrink-0 flex items-center gap-2">
+        <Link to="/" aria-label="Tribuna 360 — inicio" className="shrink-0">
           <Logo size="sm" />
-          <span className="text-[0.65rem] font-extrabold uppercase tracking-widest text-emerald-400 bg-emerald-950/80 border border-emerald-800/80 px-2 py-0.5 rounded-md hidden sm:inline-block">
-            Enterprise SaaS
-          </span>
         </Link>
 
         {/* Desktop Navigation */}
