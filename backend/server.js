@@ -80,6 +80,10 @@ app.use('/api/v1/sponsors', sponsorRoutes);
 app.use('/api/v1/gates', gateRoutes);
 app.use('/api/v1/uploads', uploadRoutes);
 app.use('/api/v1/saas', saasRoutes);
-app.listen(PORT, () => {
-  console.log(`Servidor backend ejecutándose en http://localhost:${PORT}`);
-});
+if (require.main === module) {
+    app.listen(PORT, () => {
+        console.log("Servidor backend ejecutandose en http://localhost:" + PORT);
+    });
+}
+
+module.exports = app;
