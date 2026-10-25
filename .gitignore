@@ -2,3 +2,8 @@ node_modules/
 .env
 /dist/
 /docs/
+*.log
+*.txt
+backend/obj/
+backend/openapi.json
+backend/backend.csproj
