@@ -67,7 +67,7 @@ const createProduct = async (req, res) => {
         const priceNum = Number(price);
         const stockNum = Number(stock);
 
-        if (typeof stock === 'boolean' || !tenant_id || !name || !name.trim() || !Number.isFinite(priceNum) || priceNum < 0 || !Number.isInteger(stockNum) || stockNum < 0) {
+        if (stock === null || stock === undefined || typeof stock === 'boolean' || (typeof stock === 'string' && stock.trim() === '') || !tenant_id || !name || !name.trim() || !Number.isFinite(priceNum) || priceNum < 0 || !Number.isInteger(stockNum) || stockNum < 0) {
             return res.status(400).json({
                 success: false,
                 message: 'Datos inválidos: club, nombre, precio (>=0) y stock (>=0) son requeridos.'
@@ -156,7 +156,7 @@ const updateProduct = async (req, res) => {
 
         if (has('stock')) {
             const n = Number(req.body.stock);
-            if (typeof req.body.stock === 'boolean' || !Number.isInteger(n) || n < 0) {
+            if (req.body.stock === null || req.body.stock === undefined || typeof req.body.stock === 'boolean' || (typeof req.body.stock === 'string' && req.body.stock.trim() === '') || !Number.isInteger(n) || n < 0) {
                 return res.status(400).json({ success: false, message: 'Stock inválido.' });
             }
             patch.stock = n;
