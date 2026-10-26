@@ -22,6 +22,11 @@ const getProducts = async (req, res) => {
             query = query.eq('tenant_id', req.query.tenant_id);
         }
 
+        const buscar = req.query.buscar;
+        if (buscar !== undefined && String(buscar).trim() !== '') {
+            query = query.ilike('name', `%${String(buscar).trim()}%`);
+        }
+
         const { data, error } = await query;
 
         if (error) throw error;
@@ -31,6 +36,29 @@ const getProducts = async (req, res) => {
         return res.status(500).json({ success: false, message: 'Error al obtener los productos', error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : error.message) });
     }
 };
+
+const getProductById = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const { data, error } = await supabase
+            .from('products')
+            .select('*, tenants(name, slug)')
+            .eq('id', id)
+            .maybeSingle();
+
+        if (error) throw error;
+
+        if (!data) {
+            return res.status(404).json({ success: false, message: 'Producto no encontrado.' });
+        }
+
+        return res.status(200).json({ success: true, data });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Error al obtener el producto', error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : error.message) });
+    }
+};
+
 
 const createProduct = async (req, res) => {
     try {
@@ -42,9 +70,9 @@ const createProduct = async (req, res) => {
         }
 
         const priceNum = Number(price);
-        const stockNum = Number.parseInt(stock, 10);
+        const stockNum = Number(stock);
 
-        if (!tenant_id || !name || !name.trim() || !Number.isFinite(priceNum) || priceNum < 0 || !Number.isInteger(stockNum) || stockNum < 0) {
+        if (stock === null || stock === undefined || typeof stock === 'boolean' || (typeof stock === 'string' && stock.trim() === '') || !tenant_id || !name || !name.trim() || !Number.isFinite(priceNum) || priceNum < 0 || !Number.isInteger(stockNum) || stockNum < 0) {
             return res.status(400).json({
                 success: false,
                 message: 'Datos inválidos: club, nombre, precio (>=0) y stock (>=0) son requeridos.'
@@ -132,8 +160,8 @@ const updateProduct = async (req, res) => {
         }
 
         if (has('stock')) {
-            const n = Number.parseInt(req.body.stock, 10);
-            if (!Number.isInteger(n) || n < 0) {
+            const n = Number(req.body.stock);
+            if (req.body.stock === null || req.body.stock === undefined || typeof req.body.stock === 'boolean' || (typeof req.body.stock === 'string' && req.body.stock.trim() === '') || !Number.isInteger(n) || n < 0) {
                 return res.status(400).json({ success: false, message: 'Stock inválido.' });
             }
             patch.stock = n;
@@ -215,6 +243,7 @@ const deleteProduct = async (req, res) => {
 
 module.exports = {
     getProducts,
+    getProductById,
     createProduct,
     updateProduct,
     deleteProduct

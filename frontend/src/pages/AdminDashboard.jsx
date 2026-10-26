@@ -330,7 +330,7 @@ export default function AdminDashboard() {
     setProdMsg(null);
 
     const price = Number(prodForm.price);
-    const stock = Number.parseInt(prodForm.stock, 10);
+    const stock = Number(prodForm.stock);
 
     if (!prodForm.name.trim() || !Number.isFinite(price) || price < 0 || !Number.isInteger(stock) || stock < 0) {
       setProdMsg({ ok: false, text: 'Completa nombre, precio (>=0) y stock (>=0).' });
@@ -384,7 +384,7 @@ export default function AdminDashboard() {
     setProdListMsg(null);
 
     const price = Number(editProductForm.price);
-    const stock = Number.parseInt(editProductForm.stock, 10);
+    const stock = Number(editProductForm.stock);
 
     if (!editProductForm.name.trim() || !Number.isFinite(price) || price < 0 || !Number.isInteger(stock) || stock < 0) {
       setProdListMsg({ ok: false, text: 'Completa nombre, precio (>=0) y stock (>=0).' });
