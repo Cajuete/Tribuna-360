@@ -22,6 +22,11 @@ const getProducts = async (req, res) => {
             query = query.eq('tenant_id', req.query.tenant_id);
         }
 
+        const buscar = req.query.buscar;
+        if (buscar !== undefined && String(buscar).trim() !== '') {
+            query = query.ilike('name', `%${String(buscar).trim()}%`);
+        }
+
         const { data, error } = await query;
 
         if (error) throw error;
