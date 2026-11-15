@@ -47,7 +47,7 @@ const verifyToken = async (req, res, next) => {
 
 /**
  * Middleware para verificar si el usuario posee uno de los roles permitidos
- * @param {Array<string>} allowedRoles - Lista de roles autorizados (ej: ['superadmin', 'club_admin'])
+ * @param {Array<string>} allowedRoles
  */
 const requireRole = (allowedRoles) => {
     return (req, res, next) => {

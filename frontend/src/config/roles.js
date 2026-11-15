@@ -7,6 +7,7 @@ export const ROLE_LABELS = {
   financial_auditor: 'Auditor financiero',
   customer_support: 'Soporte',
   gate_operator: 'Operador de puerta',
+  payment_manager: 'Encargado de pagos',
   fan: 'Hincha',
 };
 
@@ -17,6 +18,7 @@ export const STAFF_ROLES = [
   'financial_auditor',
   'customer_support',
   'gate_operator',
+  'payment_manager',
 ];
 
 export const VALID_ROLES = [
@@ -28,6 +30,7 @@ export const VALID_ROLES = [
   'financial_auditor',
   'customer_support',
   'gate_operator',
+  'payment_manager',
   'fan',
 ];
 
@@ -38,6 +41,7 @@ export const ROLE_NAV_LINKS = {
     { to: '/socios', label: 'Socios' },
     { to: '/mis-entradas', label: 'Entradas' },
     { to: '/mis-pedidos', label: 'Pedidos' },
+    { to: '/mis-pagos', label: 'Mis pagos' },
     { to: '/mis-socio', label: 'Membresía' },
     { to: '/mi-perfil', label: 'Mi Perfil' },
   ],
@@ -50,6 +54,7 @@ export const ROLE_NAV_LINKS = {
     { to: '/admin?tab=tienda', label: 'Tienda', tab: 'tienda' },
     { to: '/admin?tab=pedidos', label: 'Pedidos', tab: 'pedidos' },
     { to: '/admin?tab=reportes', label: 'Reportes', tab: 'reportes' },
+    { to: '/admin?tab=pagos', label: 'Pagos', tab: 'pagos' },
   ],
   stadium_manager: [
     { to: '/admin', label: 'Panel', tab: 'resumen' },
@@ -59,6 +64,7 @@ export const ROLE_NAV_LINKS = {
     { to: '/admin', label: 'Panel', tab: 'resumen' },
     { to: '/admin?tab=pedidos', label: 'Pedidos', tab: 'pedidos' },
     { to: '/admin?tab=socios', label: 'Socios', tab: 'socios' },
+    { to: '/admin?tab=pagos', label: 'Pagos', tab: 'pagos' },
   ],
   customer_support: [
     { to: '/admin', label: 'Panel', tab: 'resumen' },
@@ -75,6 +81,11 @@ export const ROLE_NAV_LINKS = {
     { to: '/admin?tab=tienda', label: 'Tienda', tab: 'tienda' },
     { to: '/admin?tab=socios', label: 'Socios', tab: 'socios' },
     { to: '/admin?tab=mi-club', label: 'Mi Club', tab: 'mi-club' },
+    { to: '/admin?tab=pagos', label: 'Pagos', tab: 'pagos' },
+  ],
+  payment_manager: [
+    { to: '/admin', label: 'Panel', tab: 'resumen' },
+    { to: '/admin?tab=pagos', label: 'Pagos', tab: 'pagos' },
   ],
   superadmin: [
     { to: '/admin', label: 'Panel', tab: 'resumen' },
@@ -82,6 +93,7 @@ export const ROLE_NAV_LINKS = {
     { to: '/admin?tab=tienda', label: 'Tienda', tab: 'tienda' },
     { to: '/admin?tab=clubes', label: 'Clubes', tab: 'clubes' },
     { to: '/admin?tab=plataforma', label: 'Plataforma', tab: 'plataforma' },
+    { to: '/admin?tab=pagos', label: 'Pagos', tab: 'pagos' },
   ],
 };
 
@@ -93,13 +105,14 @@ export const GUEST_NAV_LINKS = [
 ];
 
 export const ADMIN_TABS_BY_ROLE = {
-  superadmin: ['resumen', 'partidos', 'tienda', 'clubes', 'plataforma', 'usuarios'],
-  club_admin: ['resumen', 'partidos', 'tienda', 'socios', 'mi-club', 'usuarios'],
-  sales_manager: ['resumen', 'tienda', 'pedidos', 'reportes'],
+  superadmin: ['resumen', 'partidos', 'tienda', 'clubes', 'plataforma', 'usuarios', 'pagos'],
+  club_admin: ['resumen', 'partidos', 'tienda', 'socios', 'mi-club', 'usuarios', 'pagos'],
+  sales_manager: ['resumen', 'tienda', 'pedidos', 'reportes', 'pagos'],
   stadium_manager: ['resumen', 'partidos'],
-  financial_auditor: ['resumen', 'pedidos', 'socios'],
+  financial_auditor: ['resumen', 'pedidos', 'socios', 'pagos'],
   customer_support: ['resumen', 'pedidos', 'socios'],
   box_office_cashier: ['resumen', 'partidos'],
+  payment_manager: ['resumen', 'pagos'],
 };
 
 export const TAB_LABELS = {
@@ -113,6 +126,7 @@ export const TAB_LABELS = {
   usuarios: 'Usuarios',
   pedidos: 'Pedidos',
   reportes: 'Reportes',
+  pagos: 'Pagos',
 };
 
 export function getAdminTabs(role) {
@@ -131,5 +145,6 @@ export const ROUTE_ROLES = {
     'financial_auditor',
     'customer_support',
     'box_office_cashier',
+    'payment_manager',
   ],
 };

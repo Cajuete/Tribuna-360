@@ -17,7 +17,7 @@ const canManageMatch = async (req, matchId) => {
 const createZone = async (req, res) => {
     try {
         const { matchId } = req.params;
-        const { name, price, capacity, is_enabled, tickets_for_sale } = req.body;
+        const { name, price, capacity, is_enabled, tickets_for_sale, sale_mode = 'general' } = req.body;
 
         const check = await canManageMatch(req, matchId);
         if (!check.ok) return res.status(check.status).json({ status: 'error', message: check.message });
@@ -30,13 +30,14 @@ const createZone = async (req, res) => {
             : Number.parseInt(tickets_for_sale, 10);
 
         if (!name || !Number.isFinite(priceNum) || priceNum < 0 || !Number.isInteger(capacityNum) || capacityNum < 1 ||
-            !Number.isInteger(saleLimit) || saleLimit < 0 || saleLimit > capacityNum) {
-            return res.status(400).json({ status: 'error', message: 'Datos inválidos: nombre, precio (>=0), capacidad (>=1) y entradas a la venta (0..capacidad) son requeridos.' });
+            !Number.isInteger(saleLimit) || saleLimit < 0 || saleLimit > capacityNum ||
+            !['general', 'numbered'].includes(sale_mode)) {
+            return res.status(400).json({ status: 'error', message: 'Datos inválidos: nombre, precio, aforo, entradas a la venta y modalidad de zona son requeridos.' });
         }
 
         const { data, error } = await supabase
             .from('zones')
-            .insert([{ match_id: matchId, name, price: priceNum, capacity: capacityNum, is_enabled: enabled, tickets_for_sale: saleLimit }])
+            .insert([{ match_id: matchId, name, price: priceNum, capacity: capacityNum, is_enabled: enabled, tickets_for_sale: saleLimit, sale_mode }])
             .select()
             .single();
 
@@ -44,21 +45,26 @@ const createZone = async (req, res) => {
 
         return res.status(201).json({ status: 'success', message: `Zona "${name}" creada.`, data });
     } catch (error) {
-        return res.status(500).json({ status: 'error', message: 'Error al crear la zona', error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : error.message) });
+        console.error('[Zones] Error al crear zona:', error.message);
+        return res.status(500).json({
+            status: 'error',
+            message: process.env.NODE_ENV === 'production' ? 'Error interno al crear la zona.' : error.message,
+        });
     }
 };
 
 const updateZone = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, price, capacity, is_enabled, tickets_for_sale } = req.body;
+        const { name, price, capacity, is_enabled, tickets_for_sale, sale_mode } = req.body;
 
-        const { data: zone } = await supabase
+        const { data: zone, error: zoneError } = await supabase
             .from('zones')
-            .select('id, match_id, capacity')
+            .select('id, match_id, capacity, sale_mode')
             .eq('id', id)
             .maybeSingle();
 
+        if (zoneError) throw zoneError;
         if (!zone) return res.status(404).json({ status: 'error', message: 'Zona no encontrada.' });
 
         const check = await canManageMatch(req, zone.match_id);
@@ -78,6 +84,26 @@ const updateZone = async (req, res) => {
         }
         if (is_enabled !== undefined) {
             patch.is_enabled = Boolean(is_enabled);
+        }
+        if (sale_mode !== undefined) {
+            if (!['general', 'numbered'].includes(sale_mode)) {
+                return res.status(400).json({ status: 'error', message: 'Modalidad de zona inválida.' });
+            }
+            if (sale_mode !== zone.sale_mode) {
+                const { count, error: countError } = await supabase
+                    .from('tickets')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('zone_id', id)
+                    .or('status.is.null,status.neq.cancelled');
+                if (countError) throw countError;
+                if (count > 0) {
+                    return res.status(409).json({
+                        status: 'error',
+                        message: 'No se puede cambiar la modalidad de una zona con entradas activas.',
+                    });
+                }
+            }
+            patch.sale_mode = sale_mode;
         }
         if (tickets_for_sale !== undefined) {
             const n = Number.parseInt(tickets_for_sale, 10);
@@ -101,6 +127,12 @@ const updateZone = async (req, res) => {
 
         return res.status(200).json({ status: 'success', message: 'Zona actualizada.', data });
     } catch (error) {
+        if (error.message.includes('ZONE_HAS_ACTIVE_TICKETS')) {
+            return res.status(409).json({
+                status: 'error',
+                message: 'No se puede cambiar la modalidad de una zona con entradas activas.',
+            });
+        }
         return res.status(500).json({ status: 'error', message: 'Error al actualizar la zona', error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : error.message) });
     }
 };

@@ -1,4 +1,4 @@
-const { supabase, supabaseAuth } = require('../config/supabase');
+const { supabase, supabaseAuth, supabasePublicAuth } = require('../config/supabase');
 
 const checkAuthStatus = async (req, res) => {
     try {
@@ -16,7 +16,7 @@ const checkAuthStatus = async (req, res) => {
 
         res.status(200).json({
             status: 'success',
-            message: 'Módulo de autenticación y conexión con Supabase activo',
+            message: 'MÃ³dulo de autenticaciÃ³n y conexiÃ³n con Supabase activo',
             data: { tenants: count }
         });
     } catch (err) {
@@ -43,53 +43,61 @@ const register = async (req, res) => {
         };
         const { password } = body;
 
+        // El registro pÃºblico nunca asigna roles ni clubes.
+        if (body.role !== undefined || body.tenant_id !== undefined) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'No se permite asignar roles ni clubes desde el registro pÃºblico.'
+            });
+        }
+
         if (!data.first_name || !data.paternal_last_name || !data.maternal_last_name ||
             !data.email || !password || !data.phone || !body.age || !data.ci || !data.ci_extension) {
             return res.status(400).json({
                 status: 'error',
-                message: 'Todos los campos son obligatorios: nombre, apellidos, email, contraseña, teléfono, edad, C.I. y extensión.'
+                message: 'Todos los campos son obligatorios: nombre, apellidos, email, contraseÃ±a, telÃ©fono, edad, C.I. y extensiÃ³n.'
             });
         }
 
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {
             return res.status(400).json({
                 status: 'error',
-                message: 'El email no tiene un formato válido.'
+                message: 'El email no tiene un formato vÃ¡lido.'
             });
         }
 
         if (String(password).length < 8 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/\d/.test(password)) {
             return res.status(400).json({
                 status: 'error',
-                message: 'La contraseña debe tener al menos 8 caracteres, una mayúscula, una minúscula y un número.'
+                message: 'La contraseÃ±a debe tener al menos 8 caracteres, una mayÃºscula, una minÃºscula y un nÃºmero.'
             });
         }
 
         if (!/^\+?[0-9][0-9\s-]{6,14}$/.test(data.phone)) {
             return res.status(400).json({
                 status: 'error',
-                message: 'El teléfono no es válido (ej: +591 71234567).'
+                message: 'El telÃ©fono no es vÃ¡lido (ej: +591 71234567).'
             });
         }
 
         if (!Number.isInteger(data.age) || data.age < 18 || data.age > 110) {
             return res.status(400).json({
                 status: 'error',
-                message: 'Debes ser mayor de 18 años para registrarte.'
+                message: 'Debes ser mayor de 18 aÃ±os para registrarte.'
             });
         }
 
         if (!/^\d{6,10}$/.test(data.ci)) {
             return res.status(400).json({
                 status: 'error',
-                message: 'El C.I. debe contener solo números (ej: 12345678).'
+                message: 'El C.I. debe contener solo nÃºmeros (ej: 12345678).'
             });
         }
 
         if (!/^(LP|SC|CB|OR|PT|CH|TJ|BN|PD)$/.test(data.ci_extension)) {
             return res.status(400).json({
                 status: 'error',
-                message: 'La extensión del C.I. no es válida (LP, SC, CB, OR, PT, CH, TJ, BN, PD).'
+                message: 'La extensiÃ³n del C.I. no es vÃ¡lida (LP, SC, CB, OR, PT, CH, TJ, BN, PD).'
             });
         }
 
@@ -108,10 +116,12 @@ const register = async (req, res) => {
 
         const full_name = `${data.first_name} ${data.paternal_last_name} ${data.maternal_last_name}`;
 
+        const requireEmailVerification = process.env.EMAIL_VERIFICATION_REQUIRED === 'true';
+
         const { data: created, error: createError } = await supabase.auth.admin.createUser({
             email: data.email,
             password,
-            email_confirm: true,
+            email_confirm: !requireEmailVerification,
             user_metadata: { full_name, phone: data.phone }
         });
 
@@ -157,7 +167,12 @@ const register = async (req, res) => {
 
         return res.status(201).json({
             status: 'success',
-            message: 'Cuenta creada exitosamente. Ya puedes iniciar sesión.'
+            message: requireEmailVerification
+                ? 'Cuenta creada exitosamente. Revisa tu correo para verificar tu cuenta antes de iniciar sesion.'
+                : 'Cuenta creada exitosamente. Ya puedes iniciar sesion.',
+            data: {
+                requires_verification: requireEmailVerification
+            }
         });
     } catch (err) {
         return res.status(500).json({
@@ -175,7 +190,7 @@ const login = async (req, res) => {
         if (!email || !password) {
             return res.status(400).json({
                 status: 'error',
-                message: 'Email y contraseña son obligatorios.'
+                message: 'Email y contraseÃ±a son obligatorios.'
             });
         }
 
@@ -187,7 +202,7 @@ const login = async (req, res) => {
         if (authError || !authData?.session) {
             return res.status(401).json({
                 status: 'error',
-                message: 'Credenciales inválidas.'
+                message: 'Credenciales invÃ¡lidas.'
             });
         }
 
@@ -200,13 +215,13 @@ const login = async (req, res) => {
         if (dbError || !dbUser) {
             return res.status(403).json({
                 status: 'error',
-                message: 'El usuario no está registrado en el sistema.'
+                message: 'El usuario no estÃ¡ registrado en el sistema.'
             });
         }
 
         return res.status(200).json({
             status: 'success',
-            message: 'Sesión iniciada correctamente.',
+            message: 'SesiÃ³n iniciada correctamente.',
             data: {
                 token: authData.session.access_token,
                 user: dbUser
@@ -215,7 +230,7 @@ const login = async (req, res) => {
     } catch (err) {
         return res.status(500).json({
             status: 'error',
-            message: 'Error interno del servidor al iniciar sesión.',
+            message: 'Error interno del servidor al iniciar sesiÃ³n.',
             error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : err.message)
         });
     }
@@ -231,93 +246,53 @@ const me = async (req, res) => {
 
 const forgotPassword = async (req, res) => {
     try {
-        const { email } = req.body;
+        const email = String(req.body?.email || '').trim().toLowerCase();
 
-        if (!email || !String(email).trim()) {
+        if (!email) {
             return res.status(400).json({
                 status: 'error',
                 message: 'El email es obligatorio.'
             });
         }
 
-        const redirect = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/restablecer`;
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'El formato del email no es válido.'
+            });
+        }
 
-        const { error } = await supabaseAuth.auth.resetPasswordForEmail(
-            String(email).trim(),
+        const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173')
+            .split(',')[0]
+            .trim()
+            .replace(/\/$/, '');
+        const redirect = process.env.PASSWORD_RESET_REDIRECT_URL ||
+            `${frontendUrl}/restablecer`;
+
+        const { error } = await supabasePublicAuth.auth.resetPasswordForEmail(
+            email,
             { redirectTo: redirect }
         );
 
         if (error) {
-            return res.status(400).json({
+            console.error('[Auth] Supabase no pudo iniciar la recuperación de contraseña:', error.message);
+            return res.status(503).json({
                 status: 'error',
-                message: 'No se pudo enviar el correo de recuperación. Inténtalo de nuevo en unos minutos.',
-                details: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : error.message)
+                message: 'No se pudo procesar la solicitud ahora. Inténtalo de nuevo más tarde.'
             });
         }
 
         return res.status(200).json({
             status: 'success',
-            message: 'Si existe una cuenta con ese email, recibirás un correo con las instrucciones para restablecer tu contraseña.'
+            message: 'Si existe una cuenta con ese email, recibirÃ¡s un correo con las instrucciones para restablecer tu contraseÃ±a.'
         });
     } catch (err) {
         return res.status(500).json({
             status: 'error',
-            message: 'Error interno del servidor al solicitar la recuperación.',
+            message: 'Error interno del servidor al solicitar la recuperaciÃ³n.',
             error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : err.message)
         });
     }
 };
 
-const resetPassword = async (req, res) => {
-    try {
-        const { token, password } = req.body;
-
-        if (!token || !password) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'El enlace de recuperación y la nueva contraseña son obligatorios.'
-            });
-        }
-
-        if (String(password).length < 8 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/\d/.test(password)) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'La contraseña debe tener al menos 8 caracteres, una mayúscula, una minúscula y un número.'
-            });
-        }
-
-        const { data: tokenData, error: tokenError } = await supabaseAuth.auth.getUser(token);
-
-        if (tokenError || !tokenData?.user) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'El enlace de recuperación no es válido o ha expirado. Solicita uno nuevo.'
-            });
-        }
-
-        const { error: updateError } = await supabase.auth.admin.updateUserById(
-            tokenData.user.id,
-            { password: String(password) }
-        );
-
-        if (updateError) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'No se pudo actualizar la contraseña: ' + updateError.message
-            });
-        }
-
-        return res.status(200).json({
-            status: 'success',
-            message: 'Contraseña actualizada correctamente. Ya puedes iniciar sesión.'
-        });
-    } catch (err) {
-        return res.status(500).json({
-            status: 'error',
-            message: 'Error interno del servidor al restablecer la contraseña.',
-            error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : err.message)
-        });
-    }
-};
-
-module.exports = { checkAuthStatus, register, login, me, forgotPassword, resetPassword };
+module.exports = { checkAuthStatus, register, login, me, forgotPassword };

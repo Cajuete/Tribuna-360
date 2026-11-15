@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Lock, Mail, CircleAlert, Loader2 } from 'lucide-react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Eye, EyeOff, Lock, Mail, CircleAlert, Loader2, Check } from 'lucide-react';
 import { authService } from '../api/auth.service';
 import { useAuth } from '../context/auth-context';
 import Logo from '../components/Logo';
@@ -9,7 +9,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const homeFor = (role) => {
   if (role === 'gate_operator') return '/scanner';
-  if (['superadmin', 'club_admin', 'sales_manager', 'stadium_manager', 'financial_auditor', 'customer_support', 'box_office_cashier'].includes(role)) return '/admin';
+  if (['superadmin', 'club_admin', 'sales_manager', 'stadium_manager', 'financial_auditor', 'customer_support', 'box_office_cashier', 'payment_manager'].includes(role)) return '/admin';
   return '/';
 };
 
@@ -22,6 +22,8 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const successMessage = location.state?.message;
 
   const validate = () => {
     const fe = {};
@@ -128,6 +130,13 @@ export default function Login() {
               {sending ? 'Entrando...' : 'Entrar'}
             </button>
           </form>
+
+          {successMessage && (
+            <div className="mt-4 flex items-start gap-2 rounded-lg border border-emerald-500/30 bg-emerald-900/40 p-3 text-sm text-emerald-300">
+              <Check className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>{successMessage}</span>
+            </div>
+          )}
 
           {error && (
             <div className="alert-error mt-4 flex items-start gap-2">

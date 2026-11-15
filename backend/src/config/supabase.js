@@ -15,12 +15,10 @@ if (!SERVICE_ROLE_KEY) {
 
 const commonOptions = { auth: { persistSession: false, autoRefreshToken: false } };
 
-// Cliente para consultas a la base de datos: SIEMPRE usa la service key.
-// NUNCA ejecutar signInWithPassword sobre este cliente (dejaría la sesión
-// del usuario en memoria y todas las consultas posteriores pasarían por RLS).
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY || ANON_KEY, commonOptions);
 
-// Cliente exclusivo para operaciones de sesión (signInWithPassword).
+const supabasePublicAuth = createClient(SUPABASE_URL, ANON_KEY, commonOptions);
+
 const supabaseAuth = createClient(SUPABASE_URL, SERVICE_ROLE_KEY || ANON_KEY, commonOptions);
 
-module.exports = { supabase, supabaseAuth };
+module.exports = { supabase, supabaseAuth, supabasePublicAuth };

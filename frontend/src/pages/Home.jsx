@@ -86,8 +86,8 @@ export default function Home() {
 
   return (
     <div>
-      <section className="relative max-w-7xl mx-auto px-4 mt-5">
-        <div className="relative h-[440px] md:h-[540px] rounded-3xl overflow-hidden border border-white/10 shadow-2xl">
+      <section className="relative max-w-[1200px] mx-auto px-4 mt-6">
+        <div className="relative h-[440px] md:h-[540px] rounded-3xl overflow-hidden border border-white/10">
           {SLIDES.map((sl, i) => (
             <div
               key={sl.title}
@@ -154,7 +154,7 @@ export default function Home() {
               { n: 'QR', l: 'Entradas 100% digitales' },
             ].map(x => (
               <div key={x.l} className="px-5 py-6 text-center">
-                <p className="font-display text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-emerald-300 to-lime-300">
+                <p className="font-display text-3xl font-bold text-emerald-300">
                   {x.n ?? '—'}
                 </p>
                 <p className="text-[0.7rem] uppercase tracking-widest text-gray-500 mt-1">{x.l}</p>
@@ -164,7 +164,7 @@ export default function Home() {
         </section>
       )}
       {clubs.length > 0 && (
-        <section className="max-w-7xl mx-auto px-6 mt-14" id="clubes">
+        <section className="max-w-[1200px] mx-auto px-6 mt-14" id="clubes">
           <div className="flex items-end justify-between mb-6">
             <div>
               <span className="eyebrow">Clubes</span>
@@ -196,7 +196,7 @@ export default function Home() {
         </section>
       )}
 
-      <section className="max-w-7xl mx-auto px-6 mt-16" id="partidos">
+      <section className="max-w-[1200px] mx-auto px-6 mt-16" id="partidos">
         <div className="flex items-end justify-between mb-6">
           <div>
             <span className="eyebrow">Calendario</span>
@@ -250,7 +250,7 @@ export default function Home() {
 
 
 
-      <section className="max-w-7xl mx-auto px-6 mt-16">
+      <section className="max-w-[1200px] mx-auto px-6 mt-16">
         <div className="relative rounded-3xl overflow-hidden border border-emerald-700/40">
           <img src={hero1} alt="" className="absolute inset-0 w-full h-full object-cover" />
           <div className="absolute inset-0 bg-gradient-to-r from-black/95 via-black/80 to-emerald-900/60" />
@@ -267,7 +267,7 @@ export default function Home() {
             <img
               src={heroPng}
               alt=""
-              className="hidden md:block w-44 h-44 object-contain drop-shadow-[0_18px_40px_rgba(16,185,129,0.5)]"
+              className="hidden md:block w-44 h-44 object-contain"
             />
           </div>
         </div>

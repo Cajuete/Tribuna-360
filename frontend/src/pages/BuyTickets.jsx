@@ -3,12 +3,14 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Ticket, ShieldAlert } from 'lucide-react';
 import { matchService } from '../api/match.service';
 import { ticketService } from '../api/ticket.service';
+import { paymentService } from '../api/payment.service';
 import { useAuth } from '../context/auth-context';
 
 export default function BuyTickets() {
   const { matchId } = useParams();
   const navigate = useNavigate();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  const requiresQueue = Boolean(token && user?.role !== 'box_office_cashier');
 
   const [match, setMatch] = useState(null);
   const [zones, setZones] = useState([]);
@@ -17,6 +19,9 @@ export default function BuyTickets() {
   const [quantity, setQuantity] = useState(1);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
+  const [queueState, setQueueState] = useState(null);
+  const [queueChecking, setQueueChecking] = useState(false);
+  const [queueAction, setQueueAction] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -30,6 +35,67 @@ export default function BuyTickets() {
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
   }, [matchId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!requiresQueue) {
+      setQueueState(token ? { status: 'disabled' } : null);
+      setQueueChecking(false);
+      return () => { cancelled = true; };
+    }
+
+    setQueueChecking(true);
+    ticketService.getQueueStatus(matchId)
+      .then(res => {
+        if (!cancelled) setQueueState(res.data);
+      })
+      .catch(err => {
+        if (!cancelled) setError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setQueueChecking(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [matchId, requiresQueue, token]);
+
+  useEffect(() => {
+    if (!requiresQueue || queueState?.status !== 'waiting') return undefined;
+
+    const interval = setInterval(() => {
+      ticketService.getQueueStatus(matchId)
+        .then(res => setQueueState(res.data))
+        .catch(err => setError(err.message));
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [matchId, queueState?.status, requiresQueue]);
+
+  const handleJoinQueue = async () => {
+    setError(null);
+    setQueueAction(true);
+    try {
+      const res = await ticketService.joinQueue(matchId);
+      setQueueState(res.data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setQueueAction(false);
+    }
+  };
+
+  const handleLeaveQueue = async () => {
+    setError(null);
+    setQueueAction(true);
+    try {
+      const res = await ticketService.leaveQueue(matchId);
+      setQueueState(res.data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setQueueAction(false);
+    }
+  };
 
   const maxAllowed = selectedZone ? Math.min(selectedZone.available ?? selectedZone.capacity ?? 10, 10) : 1;
 
@@ -55,6 +121,14 @@ export default function BuyTickets() {
 
   const handlePurchase = async () => {
     if (!token) return;
+    if (
+      requiresQueue &&
+      queueState?.status !== 'disabled' &&
+      (queueState?.status !== 'admitted' || !queueState.access_token)
+    ) {
+      setError('Primero debes unirte a la fila virtual y esperar tu turno.');
+      return;
+    }
     if (!selectedZone) {
       setError('Selecciona una zona del estadio primero.');
       return;
@@ -62,14 +136,23 @@ export default function BuyTickets() {
     setError(null);
     setSending(true);
     try {
-      const res = await ticketService.purchase({
+      const res = await paymentService.create('ticket', {
         match_id: matchId,
         zone_id: selectedZone.id,
         quantity: qtyNum,
-      });
-      if (res.success) navigate('/mis-entradas', { state: { message: res.message } });
+      }, requiresQueue ? queueState?.access_token : undefined);
+      if (res.success) navigate(`/pagar/${res.data.id}`);
     } catch (err) {
       setError(err.message);
+      if (requiresQueue) {
+        try {
+          const queue = await ticketService.getQueueStatus(matchId);
+          setQueueState(queue.data);
+        } catch (queueError) {
+          setQueueState(null);
+          setError(`${err.message} No se pudo actualizar el estado de la fila: ${queueError.message}`);
+        }
+      }
     } finally {
       setSending(false);
     }
@@ -110,8 +193,9 @@ export default function BuyTickets() {
             <button
               key={z.id}
               type="button"
+              disabled={z.sale_mode === 'numbered' || !z.is_enabled || z.available === 0}
               onClick={() => { setSelectedZone(z); setQuantity(1); setError(null); }}
-              className={`text-left p-5 rounded-2xl border transition relative overflow-hidden ${
+              className={`text-left p-5 rounded-2xl border transition relative overflow-hidden disabled:cursor-not-allowed disabled:opacity-60 ${
                 selectedZone?.id === z.id
                   ? 'bg-emerald-950/80 border-emerald-500 ring-2 ring-emerald-500/50 shadow-xl'
                   : 'card card-hover border-slate-800'
@@ -121,8 +205,15 @@ export default function BuyTickets() {
                 <p className="font-bold text-lg text-white font-display">{z.name}</p>
                 <Ticket className="w-5 h-5 text-emerald-400" />
               </div>
+              <p className="text-xs text-slate-400 mt-1">
+                {z.sale_mode === 'numbered' ? 'Butacas numeradas' : 'Entrada general'}
+              </p>
               <p className="text-emerald-400 font-display font-extrabold text-2xl mt-2">Bs {z.price}</p>
-              <p className="text-xs text-slate-400 mt-2 font-medium">Entradas disponibles: <span className="text-white font-bold">{z.available ?? z.capacity}</span></p>
+              {z.sale_mode === 'numbered' ? (
+                <p className="text-xs text-amber-300 mt-2">La selección de butacas estará disponible en una próxima etapa.</p>
+              ) : (
+                <p className="text-xs text-slate-400 mt-2 font-medium">Entradas disponibles: <span className="text-white font-bold">{z.available ?? z.capacity}</span></p>
+              )}
             </button>
           ))}
         </div>
@@ -160,14 +251,76 @@ export default function BuyTickets() {
         </div>
       )}
 
+      {requiresQueue && queueChecking && (
+        <p className="mt-8 text-center text-sm text-slate-400">Verificando tu turno de compra...</p>
+      )}
+
+      {requiresQueue && !queueChecking && queueState?.status === 'not_joined' && (
+        <div className="mt-8 p-5 rounded-2xl bg-slate-900 border border-slate-700 text-center">
+          <p className="text-slate-200 font-semibold">Para continuar, únete a la fila virtual de este partido.</p>
+          <button
+            type="button"
+            onClick={handleJoinQueue}
+            disabled={queueAction}
+            className="btn btn-primary mt-4 px-6 py-3 font-bold disabled:opacity-50"
+          >
+            {queueAction ? 'Ingresando a la fila...' : 'Unirme a la fila virtual'}
+          </button>
+        </div>
+      )}
+
+      {requiresQueue && !queueChecking && queueState?.status === 'waiting' && (
+        <div className="mt-8 p-5 rounded-2xl bg-amber-950/50 border border-amber-700 text-center">
+          <p className="text-amber-200 font-bold">Estás en la fila virtual</p>
+          <p className="text-slate-200 mt-1">Tu posición: {queueState.position}</p>
+          <p className="text-sm text-slate-400 mt-2">La página se actualizará automáticamente cada 3 segundos.</p>
+          <button
+            type="button"
+            onClick={handleLeaveQueue}
+            disabled={queueAction || sending}
+            className="mt-4 text-sm text-slate-300 underline disabled:opacity-50"
+          >
+            Salir de la fila
+          </button>
+        </div>
+      )}
+
+      {requiresQueue && !queueChecking && queueState?.status === 'admitted' && (
+        <div className="mt-8 p-5 rounded-2xl bg-emerald-950/50 border border-emerald-700 text-center">
+          <p className="text-emerald-300 font-bold">¡Es tu turno! Ya puedes completar la compra.</p>
+          {queueState.expires_at && (
+            <p className="text-sm text-slate-300 mt-2">
+              Tu turno vence: {new Date(queueState.expires_at).toLocaleTimeString()}
+            </p>
+          )}
+          {queueState.bypass && (
+            <p className="text-xs text-amber-300 mt-2">Acceso temporal: Redis no está disponible.</p>
+          )}
+          <button
+            type="button"
+            onClick={handleLeaveQueue}
+            disabled={queueAction || sending}
+            className="mt-4 text-sm text-slate-300 underline disabled:opacity-50"
+          >
+            Salir de la fila
+          </button>
+        </div>
+      )}
+
       {token && (
         <button
           type="button"
           onClick={handlePurchase}
-          disabled={!selectedZone || sending}
+          disabled={
+            !selectedZone ||
+            sending ||
+            (requiresQueue && queueChecking) ||
+            (requiresQueue && queueState?.status !== 'disabled' &&
+              (queueState?.status !== 'admitted' || !queueState.access_token))
+          }
           className="btn btn-primary mt-8 w-full py-4 text-base font-bold uppercase tracking-wider shadow-lg disabled:opacity-50"
         >
-          {sending ? 'Procesando compra segura...' : selectedZone ? `Confirmar Compra (Pago Simulado) — Bs ${total}` : 'Selecciona una zona del estadio'}
+          {sending ? 'Preparando compra...' : selectedZone ? `Continuar al pago QR — Bs ${total}` : 'Selecciona una zona del estadio'}
         </button>
       )}
 

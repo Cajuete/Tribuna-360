@@ -25,11 +25,4 @@ export const authService = {
       body: JSON.stringify({ email }),
     });
   },
-
-  async resetPassword(token, password) {
-    return await apiRequest('/auth/reset-password', {
-      method: 'POST',
-      body: JSON.stringify({ token, password }),
-    });
-  },
 };

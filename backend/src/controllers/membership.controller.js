@@ -120,13 +120,36 @@ const getMyMemberships = async (req, res) => {
     try {
         const { data, error } = await supabase
             .from('memberships')
-            .select('*, membership_plans(name, price, benefits), tenants(name, slug)')
+            .select('*, membership_plans(name, price, benefits, duration_days), tenants(name, slug)')
             .eq('user_id', req.user.id)
             .order('created_at', { ascending: false });
 
         if (error) throw error;
 
-        return res.status(200).json({ status: 'success', data });
+        const membershipIds = data.map(membership => membership.id);
+        const { data: cancellationRequests, error: cancellationError } = membershipIds.length
+            ? await supabase
+                .from('membership_cancellation_requests')
+                .select('id, membership_id, status, requested_at, reviewed_at, review_note')
+                .in('membership_id', membershipIds)
+                .order('requested_at', { ascending: false })
+            : { data: [], error: null };
+
+        if (cancellationError) throw cancellationError;
+
+        const latestCancellationRequest = new Map();
+        for (const request of cancellationRequests || []) {
+            if (!latestCancellationRequest.has(request.membership_id)) {
+                latestCancellationRequest.set(request.membership_id, request);
+            }
+        }
+
+        const membershipsWithRequests = data.map(membership => ({
+            ...membership,
+            cancellation_request: latestCancellationRequest.get(membership.id) || null
+        }));
+
+        return res.status(200).json({ status: 'success', data: membershipsWithRequests });
     } catch (error) {
         return res.status(500).json({ status: 'error', message: 'Error al obtener tus membresías', error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : error.message) });
     }
@@ -159,10 +182,48 @@ const cancelMembership = async (req, res) => {
             return res.status(400).json({ status: 'error', message: 'Esta membresía ya no está activa.' });
         }
 
+        if (membership.user_id === req.user.id && !isAdmin) {
+            const { data: existingRequest, error: existingRequestError } = await supabase
+                .from('membership_cancellation_requests')
+                .select('id')
+                .eq('membership_id', id)
+                .eq('status', 'pending')
+                .maybeSingle();
+
+            if (existingRequestError) throw existingRequestError;
+            if (existingRequest) {
+                return res.status(409).json({ status: 'error', message: 'Ya tienes una solicitud de cancelación pendiente para esta membresía.' });
+            }
+
+            const { data: cancellationRequest, error: requestError } = await supabase
+                .from('membership_cancellation_requests')
+                .insert([{
+                    membership_id: membership.id,
+                    user_id: membership.user_id,
+                    tenant_id: membership.tenant_id
+                }])
+                .select('id, status, requested_at')
+                .single();
+
+            if (requestError?.code === '23505') {
+                return res.status(409).json({ status: 'error', message: 'Ya tienes una solicitud de cancelación pendiente para esta membresía.' });
+            }
+            if (requestError) throw requestError;
+
+            return res.status(201).json({
+                status: 'success',
+                message: 'Solicitud de cancelación enviada. Tu membresía seguirá activa hasta que el club revise la solicitud.',
+                data: cancellationRequest
+            });
+        }
+
         const { data, error } = await supabase
             .from('memberships')
             .update({ status: 'cancelled' })
             .eq('id', id)
+            .eq('user_id', membership.user_id)
+            .eq('tenant_id', membership.tenant_id)
+            .eq('status', 'active')
             .select()
             .single();
 
@@ -192,8 +253,29 @@ const renewMembership = async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'Membresia no encontrada.' });
         }
 
-        if (!canManageTenant(req, membership.tenant_id)) {
+        const isMember = membership.user_id === req.user.id;
+        const isStaff = ['superadmin', 'club_admin'].includes(req.user.role);
+        if (!isMember && !isStaff) {
+            return res.status(403).json({ status: 'error', message: 'No puedes renovar una membresía que no es tuya.' });
+        }
+        if (!isMember && !canManageTenant(req, membership.tenant_id)) {
             return res.status(403).json({ status: 'error', message: 'Membresia de otro club.' });
+        }
+
+        if (membership.status !== 'active') {
+            return res.status(400).json({ status: 'error', message: 'Solo se pueden renovar membresías activas o vencidas; las canceladas no se pueden reactivar.' });
+        }
+
+        const { data: pendingCancellation, error: cancellationError } = await supabase
+            .from('membership_cancellation_requests')
+            .select('id')
+            .eq('membership_id', id)
+            .eq('status', 'pending')
+            .maybeSingle();
+
+        if (cancellationError) throw cancellationError;
+        if (pendingCancellation) {
+            return res.status(409).json({ status: 'error', message: 'No puedes renovar mientras haya una solicitud de cancelación pendiente.' });
         }
 
         let durationDays = DEFAULT_PLAN_DAYS;
@@ -210,11 +292,16 @@ const renewMembership = async (req, res) => {
         const currentExpiry = membership.expires_at ? new Date(membership.expires_at) : null;
         const baseDate = currentExpiry && currentExpiry > now ? currentExpiry : now;
         const expires_at = addDays(baseDate, durationDays).toISOString();
+        const patch = { status: 'active', expires_at };
+        if (!currentExpiry || currentExpiry <= now) patch.started_at = now.toISOString();
 
         const { data, error } = await supabase
             .from('memberships')
-            .update({ status: 'active', expires_at })
+            .update(patch)
             .eq('id', id)
+            .eq('user_id', membership.user_id)
+            .eq('tenant_id', membership.tenant_id)
+            .eq('status', 'active')
             .select()
             .single();
 
@@ -227,7 +314,7 @@ const renewMembership = async (req, res) => {
 
         return res.status(200).json({
             status: 'success',
-            message: `Membresia ${membership.membership_plans?.name || ''} renovada por ${durationDays} dias (hasta ${expires_at.slice(0, 10)}).`,
+            message: `Membresía ${membership.membership_plans?.name || ''} renovada por ${durationDays} días mediante pago simulado (hasta ${expires_at.slice(0, 10)}).`,
             data
         });
     } catch (error) {
@@ -235,11 +322,83 @@ const renewMembership = async (req, res) => {
     }
 };
 
+const getPendingCancellationRequests = async (req, res) => {
+    try {
+        let query = supabase
+            .from('membership_cancellation_requests')
+            .select('id, membership_id, user_id, tenant_id, requested_at, users(email, full_name), memberships(status, expires_at, membership_plans(name, price), tenants(name))')
+            .eq('status', 'pending')
+            .order('requested_at', { ascending: true });
+
+        if (req.user.role !== 'superadmin') {
+            query = query.eq('tenant_id', req.user.tenant_id);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        return res.status(200).json({ status: 'success', data });
+    } catch (error) {
+        console.error('[Membership] No se pudieron obtener solicitudes de cancelación:', error.message);
+        return res.status(500).json({ status: 'error', message: 'Error al obtener solicitudes de cancelación.' });
+    }
+};
+
+const resolveCancellationRequest = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { decision, review_note } = req.body || {};
+        const cleanNote = typeof review_note === 'string' ? review_note.trim() : '';
+
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+            return res.status(400).json({ status: 'error', message: 'Identificador de solicitud inválido.' });
+        }
+        if (!['approved', 'rejected'].includes(decision)) {
+            return res.status(400).json({ status: 'error', message: 'La decisión debe ser approved o rejected.' });
+        }
+        if (cleanNote.length > 2000) {
+            return res.status(400).json({ status: 'error', message: 'La nota no puede superar 2000 caracteres.' });
+        }
+
+        const { data, error } = await supabase.rpc('resolve_membership_cancellation_request', {
+            p_request_id: id,
+            p_decision: decision,
+            p_review_note: cleanNote || null,
+            p_reviewed_by: req.user.id
+        });
+
+        if (error) {
+            const message = error.message || '';
+            if (message.includes('CANCELLATION_REQUEST_NOT_FOUND')) {
+                return res.status(404).json({ status: 'error', message: 'No se encontró la solicitud.' });
+            }
+            if (message.includes('CANCELLATION_REQUEST_ALREADY_RESOLVED')) {
+                return res.status(409).json({ status: 'error', message: 'Esta solicitud ya fue resuelta.' });
+            }
+            if (message.includes('CANCELLATION_REQUEST_OTHER_TENANT') || message.includes('CLUB_ADMIN_REQUIRED')) {
+                return res.status(403).json({ status: 'error', message: 'No tienes permisos para resolver esta solicitud.' });
+            }
+            throw error;
+        }
+
+        return res.status(200).json({
+            status: 'success',
+            message: decision === 'approved'
+                ? 'Cancelación aprobada; la membresía quedó cancelada.'
+                : 'Solicitud de cancelación rechazada; la membresía continúa activa.',
+            data
+        });
+    } catch (error) {
+        console.error('[Membership] No se pudo resolver solicitud de cancelación:', error.message);
+        return res.status(500).json({ status: 'error', message: 'No se pudo resolver la solicitud de cancelación.' });
+    }
+};
+
 const getMemberships = async (req, res) => {
     try {
         let query = supabase
             .from('memberships')
-            .select('*, users(email, full_name), membership_plans(name, price), tenants(name)')
+            .select('*, users(email, full_name), membership_plans(name, price, duration_days), tenants(name)')
             .order('created_at', { ascending: false });
 
         if (req.user.role !== 'superadmin') {
@@ -404,6 +563,8 @@ module.exports = {
     getMyMemberships,
     cancelMembership,
     renewMembership,
+    getPendingCancellationRequests,
+    resolveCancellationRequest,
     getMemberships,
     createPlan,
     updatePlan,

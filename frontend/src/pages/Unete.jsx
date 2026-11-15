@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { associationService } from '../api/association.service';
 import { clubRequestService } from '../api/clubRequest.service';
-import { authService } from '../api/auth.service';
 import { uploadService } from '../api/upload.service';
-import { useAuth } from '../context/auth-context';
 
 const inputCls = 'input';
 
@@ -20,13 +18,20 @@ export default function Unete() {
     personeria: '',
     run_code: '',
   });
-  const [account, setAccount] = useState({ full_name: '', email: '', password: '' });
+  const [representative, setRepresentative] = useState({ full_name: '', email: '' });
+  const [privacyConsent, setPrivacyConsent] = useState(false);
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreview, setLogoPreview] = useState(null);
   const [error, setError] = useState(null);
   const [sending, setSending] = useState(false);
-  const { login } = useAuth();
-  const navigate = useNavigate();
+  const [submitted, setSubmitted] = useState(false);
+  const [associationError, setAssociationError] = useState(null);
+  const [statusToken, setStatusToken] = useState('');
+  const [statusTokenInput, setStatusTokenInput] = useState('');
+  const [requestStatus, setRequestStatus] = useState(null);
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [statusError, setStatusError] = useState(null);
+  const [copyMessage, setCopyMessage] = useState('');
 
   useEffect(() => {
     associationService
@@ -34,7 +39,7 @@ export default function Unete() {
       .then(res => {
         if (res.status === 'success') setAssociations(res.data);
       })
-      .catch(() => {});
+      .catch(() => setAssociationError('No se pudieron cargar las asociaciones. Recarga la página para intentarlo nuevamente.'));
   }, []);
 
   const handleAssociation = id => {
@@ -96,7 +101,7 @@ export default function Unete() {
         logo_url = upload.data.url;
       }
 
-      await clubRequestService.register({
+      const response = await clubRequestService.register({
         ...club,
         club_name: club.club_name.trim(),
         stadium_name: club.stadium_name.trim(),
@@ -104,15 +109,15 @@ export default function Unete() {
         logo_url,
         personeria: club.personeria.trim() || null,
         run_code: club.run_code.trim() || null,
-        contact_email: account.email.trim(),
-        full_name: account.full_name.trim(),
-        password: account.password,
+        contact_email: representative.email.trim(),
+        contact_name: representative.full_name.trim(),
+        privacy_consent: privacyConsent,
       });
-      const res = await authService.login(account.email.trim(), account.password);
-      if (res.status === 'success') {
-        login(res.data.user, res.data.token);
-        navigate('/admin');
-      }
+      const trackingToken = response.data?.status_token || '';
+      setStatusToken(trackingToken);
+      setStatusTokenInput(trackingToken);
+      setSubmitted(true);
+      if (trackingToken) await lookupRequestStatus(trackingToken);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -120,35 +125,98 @@ export default function Unete() {
     }
   };
 
+  const lookupRequestStatus = async token => {
+    setStatusError(null);
+    setRequestStatus(null);
+    setStatusLoading(true);
+    try {
+      const response = await clubRequestService.getStatus(token);
+      setRequestStatus(response.data);
+    } catch (err) {
+      setStatusError(err.message);
+    } finally {
+      setStatusLoading(false);
+    }
+  };
+
+  const handleStatusLookup = async e => {
+    e.preventDefault();
+    const token = statusTokenInput.trim().toLowerCase();
+    if (!/^[a-f0-9]{64}$/.test(token)) {
+      setStatusError('Ingresa el código de seguimiento de 64 caracteres.');
+      setRequestStatus(null);
+      return;
+    }
+    await lookupRequestStatus(token);
+  };
+
+  const handleCopyStatusToken = async () => {
+    try {
+      await navigator.clipboard.writeText(statusToken);
+      setCopyMessage('Código copiado.');
+    } catch {
+      setCopyMessage('No se pudo copiar; selecciónalo y cópialo manualmente.');
+    }
+  };
+
   return (
     <div className="max-w-2xl mx-auto px-6 py-16">
       <div className="card p-8">
-        <span className="eyebrow block text-center">Alta de club</span>
+        <span className="eyebrow block text-center">Solicitud de incorporación</span>
         <h2 className="section-title text-3xl mt-2 text-center">Únete a Tribuna 360</h2>
         <p className="text-sm text-gray-400 text-center mt-2">
-          Publica tu club, vende entradas, productos y socios en una sola plataforma.
+          Envía los datos de tu club para que el equipo de Tribuna 360 los revise.
         </p>
 
-        <div className="flex items-center justify-center gap-3 my-6 text-sm">
-          <span className={`px-3 py-1 rounded-full ${step === 1 ? 'bg-emerald-600 text-white' : 'bg-gray-900 text-emerald-400 border border-emerald-700'}`}>
-            1. Datos del club
-          </span>
-          <span className="text-gray-500">→</span>
-          <span className={`px-3 py-1 rounded-full ${step === 2 ? 'bg-emerald-600 text-white' : 'bg-gray-900 text-gray-400 border border-gray-700'}`}>
-            2. Tu cuenta de administrador
-          </span>
-        </div>
+        {!submitted && (
+          <div className="flex items-center justify-center gap-3 my-6 text-sm">
+            <span className={`px-3 py-1 rounded-full ${step === 1 ? 'bg-emerald-600 text-white' : 'bg-gray-900 text-emerald-400 border border-emerald-700'}`}>
+              1. Datos del club
+            </span>
+            <span className="text-gray-500">→</span>
+            <span className={`px-3 py-1 rounded-full ${step === 2 ? 'bg-emerald-600 text-white' : 'bg-gray-900 text-gray-400 border border-gray-700'}`}>
+              2. Representante
+            </span>
+          </div>
+        )}
 
-        {error && <p className="mb-4 alert-error">{error}</p>}
-
-        {step === 1 && (
-          <form onSubmit={goStep2} className="space-y-4">
+        {submitted ? (
+          <div className="space-y-4 text-center">
+            <p className="alert-ok">El envío fue procesado. Las solicitudes nuevas quedan pendientes de revisión.</p>
+            <p className="text-sm text-gray-300">
+              Consulta el resultado con tu código privado. Enviar la solicitud no crea una cuenta ni otorga permisos de administración.
+            </p>
+            {statusToken && (
+              <div className="rounded-xl border border-amber-700/50 bg-amber-950/30 p-4 text-left">
+                <p className="text-sm font-semibold text-amber-200">Guarda tu código de seguimiento</p>
+                <p className="text-xs text-gray-300 mt-1">Este código es privado y permite consultar el estado. No podremos recuperarlo si lo pierdes.</p>
+                <div className="flex flex-wrap gap-2 mt-3">
+                  <input aria-label="Código de seguimiento" readOnly value={statusToken} className={`${inputCls} min-w-0 flex-1 font-mono text-xs`} />
+                  <button
+                    type="button"
+                    onClick={handleCopyStatusToken}
+                    className="btn btn-outline px-4 py-2 text-sm"
+                  >
+                    Copiar código
+                  </button>
+                </div>
+                {copyMessage && <p className="text-xs text-gray-400 mt-2">{copyMessage}</p>}
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            {error && <p className="mb-4 alert-error">{error}</p>}
+            {associationError && <p className="mb-4 alert-error">{associationError}</p>}
+            {step === 1 && (
+              <form onSubmit={goStep2} className="space-y-4">
             <input
               type="text"
               placeholder="Nombre del club"
               value={club.club_name}
               onChange={e => setClub({ ...club, club_name: e.target.value })}
               required
+              maxLength={150}
               className={inputCls}
             />
             <div>
@@ -190,12 +258,14 @@ export default function Unete() {
               value={club.stadium_name}
               onChange={e => setClub({ ...club, stadium_name: e.target.value })}
               required
+              maxLength={150}
               className={inputCls}
             />
             <input
               type="number"
               placeholder="Capacidad del estadio"
               min="1"
+              max="2147483647"
               value={club.stadium_capacity}
               onChange={e => setClub({ ...club, stadium_capacity: e.target.value })}
               required
@@ -218,13 +288,18 @@ export default function Unete() {
               value={club.department}
               onChange={e => setClub({ ...club, department: e.target.value })}
               required
+              maxLength={100}
               className={inputCls}
             />
+            <p className="text-xs text-gray-400">
+              Personería jurídica y código RUN son referencias opcionales para la verificación; no necesitas adjuntar documentos en esta etapa.
+            </p>
             <input
               type="text"
               placeholder="Personería Jurídica de la Gobernación (opcional)"
               value={club.personeria}
               onChange={e => setClub({ ...club, personeria: e.target.value })}
+              maxLength={100}
               className={inputCls}
             />
             <input
@@ -232,48 +307,51 @@ export default function Unete() {
               placeholder="Código RUN del Viceministerio de Deportes (opcional)"
               value={club.run_code}
               onChange={e => setClub({ ...club, run_code: e.target.value })}
+              maxLength={100}
               className={inputCls}
             />
             <button
               type="submit"
               className="btn btn-primary w-full"
             >
-              Siguiente: tu cuenta
+              Siguiente: representante
             </button>
-          </form>
-        )}
+              </form>
+            )}
 
-        {step === 2 && (
-          <form onSubmit={handleSubmit} className="space-y-4">
+            {step === 2 && (
+              <form onSubmit={handleSubmit} className="space-y-4">
             <p className="text-sm text-gray-300 glass border border-emerald-700/40 rounded-xl p-3">
-              Club: <span className="text-emerald-400 font-medium">{club.club_name}</span> · esta cuenta quedará
-              como <span className="text-emerald-400">administrador del club</span>.
+              Club: <span className="text-emerald-400 font-medium">{club.club_name}</span>. La información se revisará antes de crear el club o asignar permisos.
             </p>
             <input
               type="text"
               placeholder="Tu nombre completo"
-              value={account.full_name}
-              onChange={e => setAccount({ ...account, full_name: e.target.value })}
+              value={representative.full_name}
+              onChange={e => setRepresentative({ ...representative, full_name: e.target.value })}
               required
+              maxLength={150}
               className={inputCls}
             />
             <input
               type="email"
               placeholder="Correo de contacto"
-              value={account.email}
-              onChange={e => setAccount({ ...account, email: e.target.value })}
+              value={representative.email}
+              onChange={e => setRepresentative({ ...representative, email: e.target.value })}
               required
+              maxLength={254}
               className={inputCls}
             />
-            <input
-              type="password"
-              placeholder="Contraseña (mínimo 6 caracteres)"
-              value={account.password}
-              onChange={e => setAccount({ ...account, password: e.target.value })}
-              required
-              minLength={6}
-              className={inputCls}
-            />
+            <label className="flex items-start gap-3 text-sm text-gray-300">
+              <input
+                type="checkbox"
+                checked={privacyConsent}
+                onChange={e => setPrivacyConsent(e.target.checked)}
+                required
+                className="mt-1 accent-emerald-500"
+              />
+              <span>Acepto que Tribuna 360 use estos datos para evaluar y dar seguimiento a esta solicitud.</span>
+            </label>
             <div className="flex gap-3">
               <button
                 type="button"
@@ -287,11 +365,45 @@ export default function Unete() {
                 disabled={sending}
                 className="btn btn-primary flex-1"
               >
-                {sending ? 'Publicando club...' : 'Crear mi club'}
+                {sending ? 'Enviando solicitud...' : 'Enviar solicitud'}
               </button>
             </div>
-          </form>
+              </form>
+            )}
+          </>
         )}
+
+        <section className="mt-8 border-t border-white/10 pt-6">
+          <h3 className="text-lg font-semibold">Consultar estado de una solicitud</h3>
+          <p className="text-sm text-gray-400 mt-1">Usa el código privado que recibiste al enviar el formulario.</p>
+          <form onSubmit={handleStatusLookup} className="flex flex-wrap gap-3 mt-4">
+            <input
+              type="text"
+              autoComplete="off"
+              spellCheck="false"
+              value={statusTokenInput}
+              onChange={e => setStatusTokenInput(e.target.value)}
+              placeholder="Código de seguimiento"
+              maxLength={64}
+              className={`${inputCls} min-w-0 flex-1 font-mono text-sm`}
+            />
+            <button type="submit" disabled={statusLoading} className="btn btn-primary px-5">
+              {statusLoading ? 'Consultando...' : 'Consultar'}
+            </button>
+          </form>
+          {statusError && <p className="alert-error mt-3">{statusError}</p>}
+          {requestStatus && (
+            <div className="rounded-xl border border-gray-700 bg-gray-800 p-4 mt-3">
+              <p className="font-semibold">
+                Estado: {requestStatus.status === 'pending' ? 'Pendiente de revisión' : requestStatus.status === 'approved' ? 'Aprobada' : 'Rechazada'}
+              </p>
+              {requestStatus.reviewed_at && (
+                <p className="text-xs text-gray-400 mt-1">Resuelta: {new Date(requestStatus.reviewed_at).toLocaleString('es-BO')}</p>
+              )}
+              {requestStatus.review_note && <p className="text-sm text-gray-300 mt-2">{requestStatus.review_note}</p>}
+            </div>
+          )}
+        </section>
 
         <p className="mt-6 text-center text-sm text-gray-400">
           ¿Solo quieres comprar entradas?{' '}

@@ -9,6 +9,7 @@ const VALID_ROLES = [
     'financial_auditor',
     'customer_support',
     'gate_operator',
+    'payment_manager',
     'fan'
 ];
 
@@ -18,7 +19,8 @@ const STAFF_ROLES = [
     'stadium_manager',
     'financial_auditor',
     'customer_support',
-    'gate_operator'
+    'gate_operator',
+    'payment_manager'
 ];
 
 const ROLES_REQUIRING_TENANT = [
@@ -28,7 +30,8 @@ const ROLES_REQUIRING_TENANT = [
     'stadium_manager',
     'financial_auditor',
     'customer_support',
-    'gate_operator'
+    'gate_operator',
+    'payment_manager'
 ];
 
 const getUsers = async (req, res) => {

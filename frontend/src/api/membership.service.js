@@ -47,4 +47,15 @@ export const membershipService = {
   async renew(id) {
     return await apiRequest(`/memberships/${id}/renew`, { method: 'PATCH' });
   },
+
+  async getCancellationRequests() {
+    return await apiRequest('/memberships/cancellation-requests', { method: 'GET' });
+  },
+
+  async resolveCancellationRequest(id, decision, reviewNote = '') {
+    return await apiRequest(`/memberships/cancellation-requests/${id}/decision`, {
+      method: 'PATCH',
+      body: JSON.stringify({ decision, review_note: reviewNote }),
+    });
+  },
 };

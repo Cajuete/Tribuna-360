@@ -40,9 +40,25 @@ const parseMatchday = (value) => {
     return { ok: true, value: n };
 };
 
+const parseStadiumCoordinates = (latitude, longitude) => {
+    const latEmpty = latitude === undefined || latitude === null || String(latitude).trim() === '';
+    const lngEmpty = longitude === undefined || longitude === null || String(longitude).trim() === '';
+
+    if (latEmpty && lngEmpty) return { ok: true, latitude: null, longitude: null };
+    if (latEmpty || lngEmpty) return { ok: false };
+
+    const lat = Number(latitude);
+    const lng = Number(longitude);
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lng) || lng < -180 || lng > 180) {
+        return { ok: false };
+    }
+
+    return { ok: true, latitude: lat, longitude: lng };
+};
+
 const createMatch = async (req, res) => {
     try {
-        const { opponent, match_date, stadium_name, competition, matchday, image_url } = req.body;
+        const { opponent, match_date, stadium_name, competition, matchday, image_url, latitude, longitude } = req.body;
         let tenant_id = req.body.tenant_id;
 
         if (req.user.role !== 'superadmin') {
@@ -62,12 +78,19 @@ const createMatch = async (req, res) => {
             return res.status(400).json({ status: 'error', message: 'La jornada debe ser un número entero mayor o igual a 1.' });
         }
 
+        const coordinates = parseStadiumCoordinates(latitude, longitude);
+        if (!coordinates.ok) {
+            return res.status(400).json({ status: 'error', message: 'Ingresa latitud y longitud válidas; ambas coordenadas son necesarias.' });
+        }
+
         const payload = {
             tenant_id,
             opponent: opponent.trim(),
             match_date,
             stadium_name: stadium_name.trim(),
-            status: 'scheduled'
+            status: 'scheduled',
+            latitude: coordinates.latitude,
+            longitude: coordinates.longitude
         };
 
         if (competition && competition.trim()) payload.competition = competition.trim();
@@ -80,6 +103,12 @@ const createMatch = async (req, res) => {
             .select();
 
         if (error) {
+            if (/latitude|longitude/i.test(error.message || '')) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Falta aplicar la migración 016_match_stadium_location.sql para guardar las coordenadas del estadio.'
+                });
+            }
             if (isMissingDetailsColumn(error)) {
                 return res.status(400).json({
                     status: 'error',
@@ -105,12 +134,21 @@ const updateMatch = async (req, res) => {
             });
         }
 
-        const { data: existing } = await supabase
+        const { data: existing, error: existingError } = await supabase
             .from('matches')
-            .select('id, tenant_id')
+            .select('id, tenant_id, latitude, longitude')
             .eq('id', id)
             .maybeSingle();
 
+        if (existingError) {
+            if (/latitude|longitude/i.test(existingError.message || '')) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Falta aplicar la migración 016_match_stadium_location.sql para guardar las coordenadas del estadio.'
+                });
+            }
+            throw existingError;
+        }
         if (!existing) {
             return res.status(404).json({
                 status: 'error',
@@ -161,6 +199,18 @@ const updateMatch = async (req, res) => {
             patch.stadium_name = req.body.stadium_name.trim();
         }
 
+        if (has('latitude') || has('longitude')) {
+            const coordinates = parseStadiumCoordinates(
+                has('latitude') ? req.body.latitude : existing.latitude,
+                has('longitude') ? req.body.longitude : existing.longitude
+            );
+            if (!coordinates.ok) {
+                return res.status(400).json({ status: 'error', message: 'Ingresa latitud y longitud válidas; ambas coordenadas son necesarias.' });
+            }
+            patch.latitude = coordinates.latitude;
+            patch.longitude = coordinates.longitude;
+        }
+
         if (has('status')) {
             if (!MATCH_STATUSES.includes(req.body.status)) {
                 return res.status(400).json({ status: 'error', message: 'Estado de partido inválido.' });
@@ -183,6 +233,12 @@ const updateMatch = async (req, res) => {
             .select();
 
         if (error) {
+            if (/latitude|longitude/i.test(error.message || '')) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Falta aplicar la migración 016_match_stadium_location.sql para guardar las coordenadas del estadio.'
+                });
+            }
             if (isMissingDetailsColumn(error)) {
                 return res.status(400).json({
                     status: 'error',
@@ -360,7 +416,8 @@ const getMatchZones = async (req, res) => {
             const { data: tickets, error: ticketError } = await supabase
                 .from('tickets')
                 .select('zone_id')
-                .in('zone_id', zoneIds);
+                .in('zone_id', zoneIds)
+                .or('status.is.null,status.neq.cancelled');
             if (ticketError) throw ticketError;
             for (const t of tickets || []) {
                 soldByZone[t.zone_id] = (soldByZone[t.zone_id] || 0) + 1;
