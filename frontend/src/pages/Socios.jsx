@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { membershipService } from '../api/membership.service';
+import { paymentService } from '../api/payment.service';
 import { useAuth } from '../context/auth-context';
 
 export default function Socios() {
@@ -23,8 +24,8 @@ export default function Socios() {
     setSubscribing(plan.id);
     setError(null);
     try {
-      const res = await membershipService.subscribe(plan.id);
-      if (res.status === 'success') navigate('/mis-socio', { state: { message: res.message } });
+      const res = await paymentService.create('membership', { plan_id: plan.id });
+      if (res.success) navigate(`/pagar/${res.data.id}`);
     } catch (err) {
       setError(err.message);
       setSubscribing(null);
@@ -43,7 +44,7 @@ export default function Socios() {
     <div className="max-w-5xl mx-auto px-6 py-10">
       <span className="eyebrow">Membresías</span>
       <h2 className="section-title text-3xl mt-1 mb-2">Hazte Socio</h2>
-      <p className="text-gray-400 text-sm mb-8">Membresías con beneficios en entradas y tienda (pago simulado).</p>
+      <p className="text-gray-400 text-sm mb-8">El club confirmará tu pago antes de activar la membresía.</p>
 
       {error && <p className="mb-4 alert-error">{error}</p>}
 
@@ -55,7 +56,7 @@ export default function Socios() {
               <div key={plan.id} className="card card-hover p-6 flex flex-col">
                 <h4 className="text-lg font-bold">{plan.name}</h4>
                 <p className="text-emerald-400 font-bold text-2xl mt-2">
-                  Bs {plan.price}<span className="text-sm text-gray-400 font-normal">/mes</span>
+                  Bs {plan.price}<span className="text-sm text-gray-400 font-normal">/{plan.duration_days || 30} días</span>
                 </p>
                 <p className="text-sm text-gray-300 mt-3 flex-1">{plan.benefits}</p>
                 <button

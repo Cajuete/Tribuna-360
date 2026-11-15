@@ -1,43 +1,90 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { CircleAlert, CircleCheck, Eye, EyeOff, Loader2 } from 'lucide-react';
-import { authService } from '../api/auth.service';
 import Logo from '../components/Logo';
+import { useAuth } from '../context/auth-context';
+import { recoveryCallbackError, recoveryCallbackType, recoveryClient } from '../api/recovery-auth';
 
 export default function Restablecer() {
-  const [token] = useState(() => {
-    const t = new URLSearchParams(window.location.hash.slice(1)).get('access_token');
-    window.history.replaceState({}, document.title, window.location.pathname);
-    return t || null;
-  });
+  const [recoveryReady, setRecoveryReady] = useState(false);
+  const [linkError, setLinkError] = useState('');
   const [form, setForm] = useState({ password: '', confirm: '' });
   const [fieldErrors, setFieldErrors] = useState({});
   const [error, setError] = useState(null);
   const [sending, setSending] = useState(false);
   const [done, setDone] = useState(false);
+  const [signOutWarning, setSignOutWarning] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const navigate = useNavigate();
+  const { logout } = useAuth();
+
+  useEffect(() => {
+    if (!recoveryClient) {
+      setLinkError('Falta configurar la URL y la clave pública de Supabase en el frontend.');
+      return undefined;
+    }
+
+    let active = true;
+    const { data: { subscription } } = recoveryClient.auth.onAuthStateChange((event, session) => {
+      if (active && event === 'PASSWORD_RECOVERY' && session) {
+        setRecoveryReady(true);
+      }
+    });
+
+    recoveryClient.auth.getSession()
+      .then(({ data, error: sessionError }) => {
+        if (!active) return;
+        if (sessionError) {
+          setLinkError('No se pudo validar el enlace. Solicita uno nuevo.');
+        } else if (recoveryCallbackError) {
+          setLinkError('El enlace no es válido o ha expirado. Solicita uno nuevo.');
+        } else if (recoveryCallbackType === 'recovery' && data.session) {
+          setRecoveryReady(true);
+        } else {
+          setLinkError('El enlace no es válido o ha expirado. Solicita uno nuevo.');
+        }
+      })
+      .catch(() => {
+        if (active) setLinkError('No se pudo validar el enlace. Solicita uno nuevo.');
+      });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
-    const fe = {};
+    const nextErrors = {};
     if (form.password.length < 8 || !/[a-z]/.test(form.password) || !/[A-Z]/.test(form.password) || !/\d/.test(form.password)) {
-      fe.password = 'Mínimo 8 caracteres, con una mayúscula, una minúscula y un número.';
+      nextErrors.password = 'Mínimo 8 caracteres, con una mayúscula, una minúscula y un número.';
     }
-    if (form.confirm !== form.password) fe.confirm = 'Las contraseñas no coinciden.';
-    setFieldErrors(fe);
-    if (Object.keys(fe).length) return;
+    if (form.confirm !== form.password) nextErrors.confirm = 'Las contraseñas no coinciden.';
+    setFieldErrors(nextErrors);
+    if (Object.keys(nextErrors).length) return;
+    if (!recoveryClient || !recoveryReady) {
+      setError('El enlace de recuperación no está activo. Solicita uno nuevo.');
+      return;
+    }
 
     setSending(true);
     try {
-      const res = await authService.resetPassword(token, form.password);
-      if (res.status === 'success') {
-        setDone(true);
-        setTimeout(() => navigate('/login', { replace: true }), 2200);
+      const { error: updateError } = await recoveryClient.auth.updateUser({ password: form.password });
+      if (updateError) throw updateError;
+
+      const { error: signOutError } = await recoveryClient.auth.signOut({ scope: 'global' });
+      if (signOutError) {
+        console.error('[PasswordRecovery] La contraseña cambió, pero no se pudieron cerrar todas las sesiones:', signOutError.message);
+        setSignOutWarning('La contraseña se cambió, pero no se pudieron cerrar las demás sesiones. Vuelve a iniciar sesión y contacta al soporte si notas actividad desconocida.');
       }
-    } catch (err) {
-      setError(String(err?.message) || 'No se pudo restablecer la contraseña.');
+
+      logout();
+      setRecoveryReady(false);
+      setDone(true);
+    } catch (requestError) {
+      console.error('[PasswordRecovery] No se pudo actualizar la contraseña:', requestError.message);
+      setError('No se pudo cambiar la contraseña. El enlace quizá expiró o ya fue utilizado; solicita uno nuevo.');
     } finally {
       setSending(false);
     }
@@ -55,29 +102,32 @@ export default function Restablecer() {
             <Logo />
           </div>
 
-          {token === null ? (
-            <>
-              <div className="flex justify-center mb-4">
-                <CircleAlert className="w-10 h-10 text-rose-400" />
-              </div>
-              <h2 className="section-title text-2xl text-center mb-3">Enlace no válido</h2>
-              <p className="text-sm text-gray-400 text-center mb-6">
-                Este enlace de recuperación no es válido o ha expirado. Solicita uno nuevo.
-              </p>
-              <Link to="/olvide-contrasena" className="btn btn-primary w-full text-center block">
-                Solicitar nuevo enlace
-              </Link>
-            </>
-          ) : done ? (
+          {done ? (
             <>
               <div className="flex justify-center mb-4">
                 <CircleCheck className="w-10 h-10 text-emerald-400" />
               </div>
               <h2 className="section-title text-2xl text-center mb-3">¡Contraseña actualizada!</h2>
-              <p className="text-sm text-gray-400 text-center">
-                Ya puedes iniciar sesión con tu nueva contraseña. Serás redirigido al login...
+              <p className="text-sm text-gray-400 text-center mb-6">
+                La contraseña anterior ya no sirve para iniciar sesión. Este dispositivo cerró sesión; vuelve a entrar con tu nueva contraseña.
               </p>
+              {signOutWarning && <p className="text-sm text-amber-300 text-center mb-5">{signOutWarning}</p>}
+              <Link to="/login" className="btn btn-primary w-full text-center block">Ir a iniciar sesión</Link>
             </>
+          ) : linkError ? (
+            <>
+              <div className="flex justify-center mb-4">
+                <CircleAlert className="w-10 h-10 text-rose-400" />
+              </div>
+              <h2 className="section-title text-2xl text-center mb-3">Enlace no disponible</h2>
+              <p className="text-sm text-gray-400 text-center mb-6">{linkError}</p>
+              <Link to="/olvide-contrasena" className="btn btn-primary w-full text-center block">Solicitar nuevo enlace</Link>
+            </>
+          ) : !recoveryReady ? (
+            <div className="py-8 text-center text-gray-300">
+              <Loader2 className="w-6 h-6 animate-spin mx-auto mb-3" />
+              Validando el enlace de recuperación...
+            </div>
           ) : (
             <>
               <span className="eyebrow block text-center">Nueva contraseña</span>
@@ -96,7 +146,7 @@ export default function Restablecer() {
                     />
                     <button
                       type="button"
-                      onClick={() => setShowPassword(v => !v)}
+                      onClick={() => setShowPassword(value => !value)}
                       aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
                     >

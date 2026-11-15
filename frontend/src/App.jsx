@@ -22,12 +22,14 @@ import MyHistory from './pages/MyHistory';
 import Unete from './pages/Unete';
 import OlvideContrasena from './pages/OlvideContrasena';
 import Restablecer from './pages/Restablecer';
+import PaymentCheckout from './pages/PaymentCheckout';
+import MyPayments from './pages/MyPayments';
 
 export default function App() {
   return (
     <AuthProvider>
       <Router>
-        <div className="bg-gray-900 text-gray-100 min-h-screen flex flex-col justify-between">
+        <div className="app-shell min-h-screen flex flex-col justify-between">
           <Navbar />
           <main className="flex-grow">
             <Routes>
@@ -40,6 +42,12 @@ export default function App() {
               <Route path="/club/:slug" element={<Club />} />
               <Route path="/comprar/:matchId" element={<BuyTickets />} />
               <Route path="/tienda" element={<Tienda />} />
+              <Route path="/pagar/:paymentId" element={
+                <ProtectedRoute><PaymentCheckout /></ProtectedRoute>
+              } />
+              <Route path="/mis-pagos" element={
+                <ProtectedRoute><MyPayments /></ProtectedRoute>
+              } />
               <Route path="/socios" element={<Socios />} />
               <Route path="/mis-socio" element={
                 <ProtectedRoute><MyMembership /></ProtectedRoute>

@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { matchService } from '../api/match.service';
 import { orderService } from '../api/order.service';
 import { membershipService } from '../api/membership.service';
 import { tenantService } from '../api/tenant.service';
+import { clubRequestService } from '../api/clubRequest.service';
 import { saasService } from '../api/saas.service';
 import { userService } from '../api/user.service';
 import { productService } from '../api/product.service';
@@ -12,6 +13,7 @@ import { uploadService } from '../api/upload.service';
 import { useAuth } from '../context/auth-context';
 import { ROLE_LABELS, STAFF_ROLES, getAdminTabs } from '../config/roles';
 import ClubLogo from '../components/ClubLogo';
+import PaymentsDashboard from './PaymentsDashboard';
 
 const STATUS_STYLES = {
   pending: 'bg-yellow-900 text-yellow-300',
@@ -87,12 +89,12 @@ export default function AdminDashboard() {
   const isSupport = role === 'customer_support';
   const isCashier = role === 'box_office_cashier';
   const [searchParams, setSearchParams] = useSearchParams();
-  const [form, setForm] = useState({ tenant_id: '', opponent: '', competition: '', matchday: '', match_date: '', stadium_name: '' });
+  const [form, setForm] = useState({ tenant_id: '', opponent: '', competition: '', matchday: '', match_date: '', stadium_name: '', latitude: '', longitude: '' });
   const [matchFile, setMatchFile] = useState(null);
   const [matchPreview, setMatchPreview] = useState(null);
   const [draftZones, setDraftZones] = useState([]);
   const [editingMatchId, setEditingMatchId] = useState(null);
-  const [editForm, setEditForm] = useState({ opponent: '', competition: '', matchday: '', match_date: '', stadium_name: '', status: 'scheduled' });
+  const [editForm, setEditForm] = useState({ opponent: '', competition: '', matchday: '', match_date: '', stadium_name: '', latitude: '', longitude: '', status: 'scheduled' });
   const [editMatchFile, setEditMatchFile] = useState(null);
   const [editMatchPreview, setEditMatchPreview] = useState(null);
   const [matchListMsg, setMatchListMsg] = useState(null);
@@ -101,9 +103,18 @@ export default function AdminDashboard() {
   const [ordersError, setOrdersError] = useState(null);
   const [memberships, setMemberships] = useState([]);
   const [membershipsError, setMembershipsError] = useState(null);
+  const [cancellationRequests, setCancellationRequests] = useState([]);
+  const [cancellationRequestsError, setCancellationRequestsError] = useState(null);
+  const [cancellationRequestsMessage, setCancellationRequestsMessage] = useState(null);
+  const [cancellationReviewNotes, setCancellationReviewNotes] = useState({});
   const [tickets, setTickets] = useState([]);
   const [ticketsError, setTicketsError] = useState(null);
   const [tenants, setTenants] = useState([]);
+  const [clubRequests, setClubRequests] = useState([]);
+  const [clubRequestsError, setClubRequestsError] = useState(null);
+  const [clubRequestsMessage, setClubRequestsMessage] = useState(null);
+  const [clubRequestsLoading, setClubRequestsLoading] = useState(false);
+  const [reviewNotes, setReviewNotes] = useState({});
   const [saasOverview, setSaasOverview] = useState(null);
   const [saasSettings, setSaasSettings] = useState(null);
   const [saasMsg, setSaasMsg] = useState(null);
@@ -120,7 +131,7 @@ export default function AdminDashboard() {
   const [adminMatches, setAdminMatches] = useState([]);
   const [zoneMatchId, setZoneMatchId] = useState('');
   const [zones, setZones] = useState([]);
-  const [zoneForm, setZoneForm] = useState({ name: '', price: '', capacity: '', tickets_for_sale: '', is_enabled: true });
+  const [zoneForm, setZoneForm] = useState({ name: '', price: '', capacity: '', tickets_for_sale: '', is_enabled: true, sale_mode: 'general' });
   const [zoneMsg, setZoneMsg] = useState(null);
   const [products, setProducts] = useState([]);
   const [prodForm, setProdForm] = useState({ name: '', description: '', category: '', price: '', stock: '', tenant_id: '' });
@@ -135,7 +146,7 @@ export default function AdminDashboard() {
   const [productSearch, setProductSearch] = useState('');
   const [orderFilter, setOrderFilter] = useState('all');
   const [plans, setPlans] = useState([]);
-  const [planForm, setPlanForm] = useState({ name: '', price: '', benefits: '', tenant_id: '' });
+  const [planForm, setPlanForm] = useState({ name: '', price: '', duration_days: 30, benefits: '', tenant_id: '' });
   const [planMsg, setPlanMsg] = useState(null);
 
   const loadProducts = () => {
@@ -162,6 +173,13 @@ export default function AdminDashboard() {
       .catch(err => setMembershipsError(err.message));
   };
 
+  const loadCancellationRequests = useCallback(() => {
+    setCancellationRequestsError(null);
+    membershipService.getCancellationRequests()
+      .then(res => { if (res.status === 'success') setCancellationRequests(res.data); })
+      .catch(err => setCancellationRequestsError(err.message));
+  }, []);
+
   const loadTickets = () => {
     ticketService.getAll()
       .then(res => { if (res.success) setTickets(res.data); })
@@ -179,6 +197,15 @@ export default function AdminDashboard() {
       .then(res => { if (res.status === 'success') setTenants(res.data); })
       .catch(err => setTenantError(err.message));
   };
+
+  const loadClubRequests = useCallback(() => {
+    setClubRequestsLoading(true);
+    setClubRequestsError(null);
+    clubRequestService.getAll('?status=pending')
+      .then(res => { if (res.status === 'success') setClubRequests(res.data); })
+      .catch(err => setClubRequestsError(err.message))
+      .finally(() => setClubRequestsLoading(false));
+  }, []);
 
   const loadSaasOverview = () => {
     if (!isSuperadmin) return;
@@ -260,7 +287,8 @@ export default function AdminDashboard() {
     .filter(o => o.status === 'paid' || o.status === 'shipped')
     .reduce((sum, o) => sum + Number(o.total || 0), 0);
   const pendingOrders = orders.filter(o => o.status === 'pending').length;
-  const ticketRevenue = tickets.reduce((sum, t) => sum + Number(t.price || 0), 0);
+  const soldTickets = tickets.filter(t => ['valid', 'used'].includes(t.status));
+  const ticketRevenue = soldTickets.reduce((sum, t) => sum + Number(t.price || 0), 0);
   const ticketsUsed = tickets.filter(t => t.status === 'used').length;
   const activeMemberships = memberships.filter(m => m.status === 'active');
   const membershipRevenue = activeMemberships.reduce((sum, m) => sum + Number(m.membership_plans?.price || 0), 0);
@@ -281,6 +309,14 @@ export default function AdminDashboard() {
     else next.set('tab', id);
     setSearchParams(next);
   };
+
+  useEffect(() => {
+    if (isSuperadmin && tab === 'clubes') loadClubRequests();
+  }, [tab, isSuperadmin, loadClubRequests]);
+
+  useEffect(() => {
+    if (isFullAdmin && tab === 'socios') loadCancellationRequests();
+  }, [tab, isFullAdmin, loadCancellationRequests]);
 
   const chooseImage = (file, currentPreview, setFile, setPreview, setError) => {
     if (!file) return;
@@ -330,7 +366,7 @@ export default function AdminDashboard() {
     setProdMsg(null);
 
     const price = Number(prodForm.price);
-    const stock = Number.parseInt(prodForm.stock, 10);
+    const stock = Number(prodForm.stock);
 
     if (!prodForm.name.trim() || !Number.isFinite(price) || price < 0 || !Number.isInteger(stock) || stock < 0) {
       setProdMsg({ ok: false, text: 'Completa nombre, precio (>=0) y stock (>=0).' });
@@ -384,7 +420,7 @@ export default function AdminDashboard() {
     setProdListMsg(null);
 
     const price = Number(editProductForm.price);
-    const stock = Number.parseInt(editProductForm.stock, 10);
+    const stock = Number(editProductForm.stock);
 
     if (!editProductForm.name.trim() || !Number.isFinite(price) || price < 0 || !Number.isInteger(stock) || stock < 0) {
       setProdListMsg({ ok: false, text: 'Completa nombre, precio (>=0) y stock (>=0).' });
@@ -438,7 +474,7 @@ export default function AdminDashboard() {
         tenant_id: isSuperadmin ? planForm.tenant_id : undefined,
       });
       setPlanMsg({ ok: true, text: res.message });
-      setPlanForm({ name: '', price: '', benefits: '', tenant_id: '' });
+      setPlanForm({ name: '', price: '', duration_days: 30, benefits: '', tenant_id: '' });
       loadPlans();
     } catch (err) {
       setPlanMsg({ ok: false, text: err.message });
@@ -475,7 +511,18 @@ export default function AdminDashboard() {
     try {
       const res = await matchService.addZone(zoneMatchId, zoneForm);
       setZoneMsg({ ok: true, text: res.message });
-      setZoneForm({ name: '', price: '', capacity: '', tickets_for_sale: '', is_enabled: true });
+      setZoneForm({ name: '', price: '', capacity: '', tickets_for_sale: '', is_enabled: true, sale_mode: 'general' });
+      loadZones(zoneMatchId);
+    } catch (err) {
+      setZoneMsg({ ok: false, text: err.message });
+    }
+  };
+
+  const handleZoneSaleModeChange = async (zone, sale_mode) => {
+    setZoneMsg(null);
+    try {
+      const res = await matchService.updateZone(zone.id, { sale_mode });
+      setZoneMsg({ ok: true, text: res.message });
       loadZones(zoneMatchId);
     } catch (err) {
       setZoneMsg({ ok: false, text: err.message });
@@ -541,6 +588,27 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleClubRequestDecision = async (request, decision) => {
+    setClubRequestsMessage(null);
+    setClubRequestsError(null);
+    try {
+      const response = await clubRequestService.resolve(
+        request.id,
+        decision,
+        reviewNotes[request.id] || ''
+      );
+      setClubRequestsMessage({ ok: true, text: response.message });
+      setReviewNotes(notes => ({ ...notes, [request.id]: '' }));
+      loadClubRequests();
+      if (decision === 'approved') {
+        loadTenants();
+        loadSaasOverview();
+      }
+    } catch (err) {
+      setClubRequestsMessage({ ok: false, text: err.message });
+    }
+  };
+
   const handleSettingsSubmit = async (e) => {
     e.preventDefault();
     setSaasMsg(null);
@@ -579,7 +647,7 @@ export default function AdminDashboard() {
   };
   const updateDraftZone = (index, key, value) => setDraftZones(z => z.map((zone, i) => i === index ? { ...zone, [key]: value } : zone));
   const removeDraftZone = (index) => setDraftZones(z => z.filter((_, i) => i !== index));
-  const addDraftZone = () => setDraftZones(z => [...z, { name: '', price: '', capacity: '', tickets_for_sale: '', is_enabled: true }]);
+  const addDraftZone = () => setDraftZones(z => [...z, { name: '', price: '', capacity: '', tickets_for_sale: '', is_enabled: true, sale_mode: 'general' }]);
 
   const handleMatchSubmit = async (e) => {
     e.preventDefault();
@@ -602,7 +670,7 @@ export default function AdminDashboard() {
       const payload = { ...form, stadium_name: form.stadium_name.trim() || myTenant?.stadium_name || '', image_url };
       const res = await matchService.createMatch(payload);
       const match = res.data;
-      let zoneErrors = 0;
+      const zoneErrors = [];
       for (const zone of zones) {
         try {
           await matchService.addZone(match.id, {
@@ -611,16 +679,17 @@ export default function AdminDashboard() {
             capacity: Number(zone.capacity),
             tickets_for_sale: zone.tickets_for_sale === '' ? Number(zone.capacity) : Number(zone.tickets_for_sale),
             is_enabled: zone.is_enabled !== false,
+            sale_mode: zone.sale_mode || 'general',
           });
-        } catch {
-          zoneErrors++;
+        } catch (error) {
+          zoneErrors.push(`${zone.name.trim()}: ${error.message}`);
         }
       }
       setMessage({
-        ok: zoneErrors === 0,
-        text: zoneErrors === 0
+        ok: zoneErrors.length === 0,
+        text: zoneErrors.length === 0
           ? `Partido publicado${zones.length ? ` con ${zones.length} zona(s)` : ''}.`
-          : `Partido publicado, pero ${zoneErrors} zona(s) no se pudieron guardar.`
+          : `Partido publicado, pero no se pudieron guardar estas zonas: ${zoneErrors.join(' | ')}`
       });
       setForm(f => ({
         tenant_id: isSuperadmin ? f.tenant_id : '',
@@ -629,6 +698,8 @@ export default function AdminDashboard() {
         matchday: '',
         match_date: '',
         stadium_name: myTenant?.stadium_name || '',
+        latitude: '',
+        longitude: '',
       }));
       setDraftZones([]);
       if (matchPreview?.startsWith('blob:')) URL.revokeObjectURL(matchPreview);
@@ -648,6 +719,8 @@ export default function AdminDashboard() {
       matchday: m.matchday ?? '',
       match_date: toLocalInput(m.match_date),
       stadium_name: m.stadium_name || '',
+      latitude: m.latitude ?? '',
+      longitude: m.longitude ?? '',
       status: m.status || 'scheduled',
     });
     setEditMatchFile(null);
@@ -717,6 +790,24 @@ export default function AdminDashboard() {
       loadMemberships();
     } catch (err) {
       setMembershipsError(err.message);
+    }
+  };
+
+  const handleCancellationRequestDecision = async (request, decision) => {
+    setCancellationRequestsMessage(null);
+    setCancellationRequestsError(null);
+    try {
+      const response = await membershipService.resolveCancellationRequest(
+        request.id,
+        decision,
+        cancellationReviewNotes[request.id] || ''
+      );
+      setCancellationRequestsMessage({ ok: true, text: response.message });
+      setCancellationReviewNotes(notes => ({ ...notes, [request.id]: '' }));
+      loadCancellationRequests();
+      loadMemberships();
+    } catch (err) {
+      setCancellationRequestsMessage({ ok: false, text: err.message });
     }
   };
 
@@ -877,6 +968,17 @@ export default function AdminDashboard() {
                   <span className={labelCls}>Estadio *</span>
                   <input type="text" placeholder="Estadio Hernando Siles" value={form.stadium_name || myTenant?.stadium_name || ''} onChange={e => setForm({ ...form, stadium_name: e.target.value })} required className={inputCls} />
                 </label>
+                <label>
+                  <span className={labelCls}>Latitud del estadio</span>
+                  <input type="number" min="-90" max="90" step="any" placeholder="-16.4897" value={form.latitude} onChange={e => setForm({ ...form, latitude: e.target.value })} className={inputCls} />
+                </label>
+                <label>
+                  <span className={labelCls}>Longitud del estadio</span>
+                  <input type="number" min="-180" max="180" step="any" placeholder="-68.1193" value={form.longitude} onChange={e => setForm({ ...form, longitude: e.target.value })} className={inputCls} />
+                </label>
+                <p className="md:col-span-2 -mt-2 text-xs text-gray-500">
+                  Coordenadas opcionales; se usarán para indicar la ubicación del evento en Apple Wallet y Google Wallet.
+                </p>
 
                 <label className="md:col-span-2">
                   <span className={labelCls}>Imagen del partido</span>
@@ -899,6 +1001,7 @@ export default function AdminDashboard() {
                     <div>
                       <p className="font-semibold text-sm">Zonas y precios</p>
                       <p className="text-xs text-gray-500">Puedes crear las zonas ahora o gestionarlas después.</p>
+                      <p className="text-xs text-amber-400 mt-1">Las zonas numeradas no se venderán hasta que esté lista la selección de butacas.</p>
                     </div>
                     <button type="button" onClick={addDraftZone} className="bg-gray-700 hover:bg-gray-600 text-white text-sm px-4 py-2 rounded-lg transition">
                       + Agregar zona
@@ -911,23 +1014,30 @@ export default function AdminDashboard() {
                     <div className="space-y-2">
                       {draftZones.map((zone, index) => (
 <div key={index} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-end">
-                          <label className="md:col-span-4">
+  <label className="md:col-span-3">
                             <span className={labelCls}>Zona</span>
                             <input type="text" placeholder="Curva Sur, Butacas..." value={zone.name} onChange={e => updateDraftZone(index, 'name', e.target.value)} className={inputCls} />
                           </label>
-                          <label className="md:col-span-2">
+                          <label className="md:col-span-1">
                             <span className={labelCls}>Precio Bs</span>
                             <input type="number" min="0" step="1" placeholder="50" value={zone.price} onChange={e => updateDraftZone(index, 'price', e.target.value)} className={inputCls} />
                           </label>
-                          <label className="md:col-span-2">
+                          <label className="md:col-span-1">
                             <span className={labelCls}>Aforo</span>
                             <input type="number" min="1" step="1" placeholder="1000" value={zone.capacity} onChange={e => updateDraftZone(index, 'capacity', e.target.value)} className={inputCls} />
                           </label>
-                          <label className="md:col-span-2">
+                          <label className="md:col-span-1">
                             <span className={labelCls}>A la venta</span>
                             <input type="number" min="0" step="1" placeholder="1000" value={zone.tickets_for_sale} onChange={e => updateDraftZone(index, 'tickets_for_sale', e.target.value)} className={inputCls} />
                           </label>
-                          <label className="md:col-span-1 flex items-center gap-1 text-xs text-gray-300">
+                          <label className="md:col-span-2">
+                            <span className={labelCls}>Modalidad</span>
+                            <select value={zone.sale_mode || 'general'} onChange={e => updateDraftZone(index, 'sale_mode', e.target.value)} className={inputCls}>
+                              <option value="general">General</option>
+                              <option value="numbered">Butacas numeradas</option>
+                            </select>
+                          </label>
+                          <label className="md:col-span-2 flex items-center gap-1 text-xs text-gray-300">
                             <input type="checkbox" checked={zone.is_enabled !== false} onChange={e => updateDraftZone(index, 'is_enabled', e.target.checked)} />
                             Hab.
                           </label>
@@ -976,6 +1086,14 @@ export default function AdminDashboard() {
                           <label>
                             <span className={labelCls}>Estadio *</span>
                             <input type="text" value={editForm.stadium_name} onChange={e => setEditForm({ ...editForm, stadium_name: e.target.value })} required className={inputCls} />
+                          </label>
+                          <label>
+                            <span className={labelCls}>Latitud del estadio</span>
+                            <input type="number" min="-90" max="90" step="any" placeholder="-16.4897" value={editForm.latitude} onChange={e => setEditForm({ ...editForm, latitude: e.target.value })} className={inputCls} />
+                          </label>
+                          <label>
+                            <span className={labelCls}>Longitud del estadio</span>
+                            <input type="number" min="-180" max="180" step="any" placeholder="-68.1193" value={editForm.longitude} onChange={e => setEditForm({ ...editForm, longitude: e.target.value })} className={inputCls} />
                           </label>
 <label className="md:col-span-2">
                             <span className={labelCls}>Imagen del partido</span>
@@ -1060,15 +1178,26 @@ export default function AdminDashboard() {
                       {zones.map(z => (
                         <div key={z.id} className="bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-sm">
                           <span>
-                            <span className="font-bold">{z.name}</span> · Bs {z.price} · aforo {z.capacity} · a la venta {z.tickets_for_sale ?? z.capacity} · vendidas {z.sold ?? 0} · disponibles {z.available ?? 0}
+                            <span className="font-bold">{z.name}</span> · {z.sale_mode === 'numbered' ? 'Butacas numeradas' : 'General'} · Bs {z.price} · aforo {z.capacity} · a la venta {z.tickets_for_sale ?? z.capacity} · vendidas {z.sold ?? 0} · disponibles {z.available ?? 0}
                             {!z.is_enabled && <span className="ml-2 text-red-400 font-semibold">(deshabilitada)</span>}
                           </span>
+                          <label className="flex items-center gap-2 text-xs text-gray-300">
+                            <span>Modalidad</span>
+                            <select
+                              value={z.sale_mode || 'general'}
+                              onChange={e => handleZoneSaleModeChange(z, e.target.value)}
+                              className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white"
+                            >
+                              <option value="general">General</option>
+                              <option value="numbered">Butacas numeradas</option>
+                            </select>
+                          </label>
                           <button type="button" onClick={() => handleZoneDelete(z.id)} className="bg-red-800 hover:bg-red-700 text-white text-xs px-3 py-1.5 rounded-lg transition">Eliminar</button>
                         </div>
                       ))}
                     </div>
 
-                    <form onSubmit={handleZoneSubmit} className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end border-t border-gray-700 pt-4">
+                    <form onSubmit={handleZoneSubmit} className="grid grid-cols-1 md:grid-cols-7 gap-3 items-end border-t border-gray-700 pt-4">
                       <label className="md:col-span-2">
                         <span className={labelCls}>Nombre (Curva Sur, Butacas...)</span>
                         <input type="text" value={zoneForm.name} onChange={e => setZoneForm({ ...zoneForm, name: e.target.value })} required className={inputCls} />
@@ -1085,11 +1214,21 @@ export default function AdminDashboard() {
                         <span className={labelCls}>A la venta</span>
                         <input type="number" min="0" step="1" value={zoneForm.tickets_for_sale} onChange={e => setZoneForm({ ...zoneForm, tickets_for_sale: e.target.value })} className={inputCls} />
                       </label>
+                      <label>
+                        <span className={labelCls}>Modalidad</span>
+                        <select value={zoneForm.sale_mode} onChange={e => setZoneForm({ ...zoneForm, sale_mode: e.target.value })} className={inputCls}>
+                          <option value="general">General</option>
+                          <option value="numbered">Butacas numeradas</option>
+                        </select>
+                        {zoneForm.sale_mode === 'numbered' && (
+                          <span className="text-xs text-amber-400 block mt-1">La venta se habilitará al implementar el mapa de asientos.</span>
+                        )}
+                      </label>
                       <label className="flex items-center gap-2 text-xs text-gray-300">
                         <input type="checkbox" checked={zoneForm.is_enabled !== false} onChange={e => setZoneForm({ ...zoneForm, is_enabled: e.target.checked })} />
                         Habilitada
                       </label>
-                      <button type="submit" className="md:col-span-5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-2.5 rounded-lg">Agregar zona</button>
+                      <button type="submit" className="md:col-span-7 bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-2.5 rounded-lg">Agregar zona</button>
                     </form>
                   </>
                 )}
@@ -1309,6 +1448,54 @@ export default function AdminDashboard() {
         {tab === 'socios' && (
           <div className="space-y-10">
             <div>
+              <h3 className="text-xl font-semibold mb-3">Solicitudes de cancelación</h3>
+              <Notice msg={cancellationRequestsMessage} />
+              {cancellationRequestsError && <Notice msg={{ ok: false, text: cancellationRequestsError }} />}
+              {cancellationRequests.length === 0 && !cancellationRequestsError ? (
+                <p className="text-gray-400 text-sm bg-gray-800 border border-gray-700 rounded-xl p-5">No hay solicitudes pendientes de cancelación.</p>
+              ) : (
+                <div className="space-y-3">
+                  {cancellationRequests.map(request => (
+                    <article key={request.id} className="bg-gray-800 border border-gray-700 rounded-xl p-4 space-y-3">
+                      <div>
+                        <p className="font-bold">{request.users?.full_name || request.users?.email} · {request.memberships?.membership_plans?.name}</p>
+                        <p className="text-gray-400 text-xs">
+                          {request.memberships?.tenants?.name} · solicitada {new Date(request.requested_at).toLocaleString('es-BO')}
+                        </p>
+                      </div>
+                      <label className="block">
+                        <span className={labelCls}>Nota para el socio (opcional, máximo 2000 caracteres)</span>
+                        <textarea
+                          value={cancellationReviewNotes[request.id] || ''}
+                          onChange={e => setCancellationReviewNotes(notes => ({ ...notes, [request.id]: e.target.value }))}
+                          maxLength={2000}
+                          rows={2}
+                          className={inputCls}
+                        />
+                      </label>
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleCancellationRequestDecision(request, 'rejected')}
+                          className="rounded-lg bg-gray-700 px-4 py-2 text-sm text-white hover:bg-gray-600"
+                        >
+                          Rechazar solicitud
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCancellationRequestDecision(request, 'approved')}
+                          className="rounded-lg bg-red-700 px-4 py-2 text-sm text-white hover:bg-red-600"
+                        >
+                          Aprobar cancelación
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div>
               <h3 className="text-xl font-semibold mb-3">Planes de socio</h3>
               <Notice msg={planMsg} />
               <form onSubmit={handlePlanSubmit} className="bg-gray-800 p-5 rounded-2xl border border-gray-700 grid grid-cols-1 md:grid-cols-4 gap-3 items-end mb-4">
@@ -1317,8 +1504,12 @@ export default function AdminDashboard() {
                   <input type="text" value={planForm.name} onChange={e => setPlanForm({ ...planForm, name: e.target.value })} required className={inputCls} />
                 </label>
                 <label>
-                  <span className={labelCls}>Precio mensual Bs</span>
+                  <span className={labelCls}>Precio por período Bs</span>
                   <input type="number" min="0" step="1" value={planForm.price} onChange={e => setPlanForm({ ...planForm, price: e.target.value })} required className={inputCls} />
+                </label>
+                <label>
+                  <span className={labelCls}>Duración (días)</span>
+                  <input type="number" min="1" max="3650" step="1" value={planForm.duration_days} onChange={e => setPlanForm({ ...planForm, duration_days: e.target.value })} required className={inputCls} />
                 </label>
                 <label className="md:col-span-2">
                   <span className={labelCls}>Beneficios</span>
@@ -1344,7 +1535,7 @@ export default function AdminDashboard() {
                       <p className="text-gray-400 text-xs">{p.benefits}</p>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="text-emerald-400 font-semibold">Bs {p.price}/mes</span>
+                      <span className="text-emerald-400 font-semibold">Bs {p.price}/{p.duration_days || 30} días</span>
                       <button type="button" onClick={() => handlePlanDelete(p.id)} className="bg-red-800 hover:bg-red-700 text-white text-xs px-3 py-1.5 rounded-lg transition">Eliminar</button>
                     </div>
                   </div>
@@ -1363,7 +1554,7 @@ export default function AdminDashboard() {
                   <div key={m.id} className="bg-gray-800 border border-gray-700 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
                     <div className="text-sm">
                       <p className="font-bold">{m.users?.full_name || m.users?.email} · {m.membership_plans?.name}</p>
-                      <p className="text-gray-400 text-xs">{m.tenants?.name} · Bs {m.membership_plans?.price}/mes · {new Date(m.created_at).toLocaleDateString()}</p>
+                      <p className="text-gray-400 text-xs">{m.tenants?.name} · Bs {m.membership_plans?.price}/{m.membership_plans?.duration_days || 30} días · inicia {new Date(m.started_at || m.created_at).toLocaleDateString()} · vence {m.expires_at ? new Date(m.expires_at).toLocaleDateString() : 'sin fecha'}</p>
                     </div>
                     <div className="flex items-center gap-3">
                       <span className={`text-xs px-3 py-1 rounded-full uppercase font-semibold ${
@@ -1434,10 +1625,9 @@ export default function AdminDashboard() {
                       <button type="button" onClick={() => handleStatus(o.id, 'shipped')} className="bg-sky-700 hover:bg-sky-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition">Despachar</button>
                     )}
                     {o.status === 'pending' && (
-                      <>
-                        <button type="button" onClick={() => handleStatus(o.id, 'paid')} className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition">Marcar pagado</button>
-                        <button type="button" onClick={() => handleStatus(o.id, 'cancelled')} className="bg-red-800 hover:bg-red-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition">Cancelar</button>
-                      </>
+                      <span className="text-xs text-amber-300">
+                        {o.payment_id ? 'Pago QR en revisión' : 'Pendiente de pago'}
+                      </span>
                     )}
                   </div>
                 </div>
@@ -1449,7 +1639,7 @@ export default function AdminDashboard() {
         {tab === 'reportes' && (
           <div className="space-y-8">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <StatCard label="Entradas vendidas" value={`Bs ${ticketRevenue.toLocaleString()}`} sub={`${tickets.length} entrada(s) · ${ticketsUsed} ya escaneada(s)`} />
+              <StatCard label="Entradas vendidas" value={`Bs ${ticketRevenue.toLocaleString()}`} sub={`${soldTickets.length} entrada(s) · ${ticketsUsed} ya escaneada(s)`} />
               <StatCard label="Ventas de tienda" value={`Bs ${storeRevenue.toLocaleString()}`} sub={`${pendingOrders} pedido(s) pendiente(s)`} />
               <StatCard label="Socios activos" value={activeMemberships.length} sub={`Bs ${membershipRevenue.toLocaleString()} / mes`} />
               <StatCard label="Partidos programados" value={upcomingMatches} sub={`${adminMatches.length} partido(s) en total`} />
@@ -1461,8 +1651,73 @@ export default function AdminDashboard() {
           <ClubProfileForm key={myTenant.id} tenant={myTenant} onSaved={loadTenants} />
         )}
 
+        {tab === 'pagos' && <PaymentsDashboard user={user} tenants={tenants} />}
+
         {tab === 'clubes' && isSuperadmin && (
-          <div>
+          <div className="space-y-10">
+            <section>
+              <h3 className="text-xl font-semibold mb-3">Solicitudes de incorporación</h3>
+              <p className="text-sm text-gray-400 mb-4">Solo superadmins pueden revisar. La nota de resolución será visible para el solicitante mediante su código privado.</p>
+              <Notice msg={clubRequestsMessage} />
+              {clubRequestsError && <Notice msg={{ ok: false, text: clubRequestsError }} />}
+              {clubRequestsLoading ? (
+                <p className="text-sm text-gray-400 bg-gray-800 border border-gray-700 rounded-xl p-5">Cargando solicitudes...</p>
+              ) : clubRequests.length === 0 ? (
+                <p className="text-sm text-gray-400 bg-gray-800 border border-gray-700 rounded-xl p-5">No hay solicitudes pendientes.</p>
+              ) : (
+                <div className="space-y-4">
+                  {clubRequests.map(request => (
+                    <article key={request.id} className="bg-gray-800 border border-gray-700 rounded-xl p-5 space-y-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h4 className="text-lg font-bold">{request.club_name}</h4>
+                          <p className="text-sm text-gray-300">{request.contact_name} · {request.contact_email}</p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            Enviada: {new Date(request.created_at).toLocaleString('es-BO')} · {request.associations?.name || 'Sin asociación'} · {request.department}
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-yellow-900 px-3 py-1 text-xs text-yellow-300">Pendiente</span>
+                      </div>
+                      <div className="grid gap-2 text-sm text-gray-300 sm:grid-cols-2">
+                        <p><span className="text-gray-500">Estadio:</span> {request.stadium_name} · {request.stadium_capacity} localidades</p>
+                        <p><span className="text-gray-500">Identificador:</span> {request.slug}</p>
+                        <p><span className="text-gray-500">Personería:</span> {request.personeria || 'No indicada'}</p>
+                        <p><span className="text-gray-500">Código RUN:</span> {request.run_code || 'No indicado'}</p>
+                      </div>
+                      <label className="block">
+                        <span className={labelCls}>Nota para el solicitante (obligatoria al rechazar, máximo 2000 caracteres)</span>
+                        <textarea
+                          value={reviewNotes[request.id] || ''}
+                          onChange={e => setReviewNotes(notes => ({ ...notes, [request.id]: e.target.value }))}
+                          maxLength={2000}
+                          rows={3}
+                          className={inputCls}
+                        />
+                      </label>
+                      <div className="flex flex-wrap justify-end gap-3">
+                        <button
+                          type="button"
+                          disabled={!(reviewNotes[request.id] || '').trim()}
+                          onClick={() => handleClubRequestDecision(request, 'rejected')}
+                          className="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Rechazar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleClubRequestDecision(request, 'approved')}
+                          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500"
+                        >
+                          Aprobar y habilitar club
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section>
             <h3 className="text-xl font-semibold mb-3">Gestión de clubes</h3>
             <Notice msg={tenantError ? { ok: false, text: tenantError } : null} />
             <Notice msg={tenantOk ? { ok: true, text: tenantOk } : null} />
@@ -1501,6 +1756,7 @@ export default function AdminDashboard() {
                 </div>
               ))}
             </div>
+            </section>
           </div>
         )}
 

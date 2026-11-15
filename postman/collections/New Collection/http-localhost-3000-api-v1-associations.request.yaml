@@ -1,0 +1,6 @@
+$kind: http-request
+name: http://localhost:3000/api/v1/associations
+description: ""
+url: http://localhost:3000/api/v1/associations
+method: GET
+order: 1000

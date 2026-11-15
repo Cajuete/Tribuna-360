@@ -19,6 +19,7 @@ const gateRoutes = require('./src/routes/gate.routes');
 const clubRequestRoutes = require('./src/routes/clubRequest.routes');
 const uploadRoutes = require('./src/routes/upload.routes');
 const saasRoutes = require('./src/routes/saas.routes');
+const paymentRoutes = require('./src/routes/payment.routes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -31,13 +32,10 @@ const allowedOrigins = (process.env.FRONTEND_URL || '')
 
 app.use(cors({
     origin: (origin, callback) => {
-        // Permite requests sin origin (curl, Postman).
         if (!origin) return callback(null, true);
 
-        // Permite orígenes configurados explícitamente.
         if (allowedOrigins.includes(origin)) return callback(null, true);
 
-        // Permite frontends desplegados en Vercel y localhost para evitar bloqueos de CORS.
         if (/^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin)) return callback(null, true);
         if (/^http:\/\/localhost(:\d+)?$/i.test(origin)) return callback(null, true);
 
@@ -88,6 +86,7 @@ app.use('/api/v1/sponsors', sponsorRoutes);
 app.use('/api/v1/gates', gateRoutes);
 app.use('/api/v1/uploads', uploadRoutes);
 app.use('/api/v1/saas', saasRoutes);
+app.use('/api/v1/payments', paymentRoutes);
 if (require.main === module) {
     app.listen(PORT, () => {
         console.log("Servidor backend ejecutandose en http://localhost:" + PORT);

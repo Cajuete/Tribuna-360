@@ -4,8 +4,8 @@ import { Trophy } from 'lucide-react';
 import { tenantService } from '../api/tenant.service';
 import { matchService } from '../api/match.service';
 import { productService } from '../api/product.service';
-import { orderService } from '../api/order.service';
 import { membershipService } from '../api/membership.service';
+import { paymentService } from '../api/payment.service';
 import { useAuth } from '../context/auth-context';
 import ClubLogo from '../components/ClubLogo';
 
@@ -73,8 +73,8 @@ function ClubSpace({ slug }) {
     setBusy(`product-${product.id}`);
     setError(null);
     try {
-      const res = await orderService.create({ product_id: product.id, quantity: qty });
-      if (res.success) navigate('/mis-pedidos', { state: { message: res.message } });
+      const res = await paymentService.create('store', { items: [{ product_id: product.id, quantity: qty }] });
+      if (res.success) navigate(`/pagar/${res.data.id}`);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -87,8 +87,8 @@ function ClubSpace({ slug }) {
     setBusy(`plan-${plan.id}`);
     setError(null);
     try {
-      const res = await membershipService.subscribe(plan.id);
-      if (res.status === 'success') navigate('/mis-socio', { state: { message: res.message } });
+      const res = await paymentService.create('membership', { plan_id: plan.id });
+      if (res.success) navigate(`/pagar/${res.data.id}`);
     } catch (err) {
       setError(err.message);
     } finally {

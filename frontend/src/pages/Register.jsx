@@ -25,6 +25,7 @@ export default function Register() {
   });
   const [fieldErrors, setFieldErrors] = useState({});
   const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
   const [sending, setSending] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const { login } = useAuth();
@@ -70,13 +71,34 @@ export default function Register() {
     setError(null);
     if (!validate()) return;
     setSending(true);
+    setError(null);
+    setSuccess(null);
     try {
-      await authService.register({ ...form, age: Number(form.age) });
-      const res = await authService.login(form.email.trim(), form.password);
-      if (res.status === 'success') {
-        login(res.data.user, res.data.token);
-        navigate('/');
+      const regRes = await authService.register({ ...form, age: Number(form.age) });
+      const requiresVerification = regRes?.data?.requires_verification === true;
+
+      if (requiresVerification) {
+        const msg = 'Cuenta creada. Revisa tu correo para verificar tu cuenta antes de iniciar sesión.';
+        setSuccess(msg);
+        setTimeout(() => navigate('/login', { state: { message: msg }, replace: true }), 1800);
+        return;
       }
+
+      setSuccess('Cuenta creada exitosamente. Iniciando sesión...');
+      try {
+        const loginRes = await authService.login(form.email.trim(), form.password);
+        if (loginRes.status === 'success') {
+          login(loginRes.data.user, loginRes.data.token);
+          setTimeout(() => navigate('/', { replace: true }), 900);
+          return;
+        }
+      } catch {
+        // Si el inicio automático falla, se deja la cuenta creada para login manual.
+      }
+
+      const msg = 'Cuenta creada. Ya puedes iniciar sesión.';
+      setSuccess(msg);
+      setTimeout(() => navigate('/login', { state: { message: msg }, replace: true }), 1200);
     } catch (err) {
       setError(String(err?.message) || 'No se pudo crear la cuenta.');
     } finally {
@@ -213,6 +235,13 @@ export default function Register() {
               {sending ? 'Creando cuenta...' : 'Registrarme'}
             </button>
           </form>
+
+          {success && (
+            <div className="mt-4 flex items-start gap-2 rounded-lg border border-emerald-500/30 bg-emerald-900/40 p-3 text-sm text-emerald-300">
+              <Check className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>{success}</span>
+            </div>
+          )}
 
           {error && (
             <div className="alert-error mt-4 flex items-start gap-2">

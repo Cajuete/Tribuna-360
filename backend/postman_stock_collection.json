@@ -1,0 +1,236 @@
+{
+  "info": {
+    "name": "Productos - Ficha B y Ficha D",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Login",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.data && json.data.token) {",
+              "  pm.collectionVariables.set('token', json.data.token);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{"key":"Content-Type","value":"application/json"}],
+        "body": {"mode":"raw","raw":"{\n  \"email\": \"admin.demo@example.com\",\n  \"password\": \"TestStock123\"\n}"},
+        "url": "{{baseUrl}}/api/v1/auth/login"
+      }
+    },
+    {
+      "name": "2. POST valido - stock 12",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const json = pm.response.json();",
+              "if (json.product && json.product.id) { pm.collectionVariables.set('productId', json.product.id); }",
+              "pm.test('Status 201', function () { pm.response.to.have.status(201); });",
+              "pm.test('Stock 12', function () { pm.expect(json.product.stock).to.eql(12); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {"key":"Authorization","value":"Bearer {{token}}"},
+          {"key":"Content-Type","value":"application/json"}
+        ],
+        "body": {"mode":"raw","raw":"{\n  \"name\": \"Balon Stock Test\",\n  \"price\": 100,\n  \"stock\": 12,\n  \"tenant_id\": \"11111111-1111-1111-1111-111111111111\"\n}"},
+        "url": "{{baseUrl}}/api/v1/productos"
+      }
+    },
+    {
+      "name": "3. POST invalido - stock -2",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 400', function () { pm.response.to.have.status(400); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {"key":"Authorization","value":"Bearer {{token}}"},
+          {"key":"Content-Type","value":"application/json"}
+        ],
+        "body": {"mode":"raw","raw":"{\n  \"name\": \"Balon Negativo\",\n  \"price\": 100,\n  \"stock\": -2,\n  \"tenant_id\": \"11111111-1111-1111-1111-111111111111\"\n}"},
+        "url": "{{baseUrl}}/api/v1/productos"
+      }
+    },
+    {
+      "name": "4. POST invalido - stock 2.5",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 400', function () { pm.response.to.have.status(400); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {"key":"Authorization","value":"Bearer {{token}}"},
+          {"key":"Content-Type","value":"application/json"}
+        ],
+        "body": {"mode":"raw","raw":"{\n  \"name\": \"Balon Decimal\",\n  \"price\": 100,\n  \"stock\": 2.5,\n  \"tenant_id\": \"11111111-1111-1111-1111-111111111111\"\n}"},
+        "url": "{{baseUrl}}/api/v1/productos"
+      }
+    },
+    {
+      "name": "5. PUT valido - stock 0",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const json = pm.response.json();",
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "pm.test('Stock 0', function () { pm.expect(json.product.stock).to.eql(0); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          {"key":"Authorization","value":"Bearer {{token}}"},
+          {"key":"Content-Type","value":"application/json"}
+        ],
+        "body": {"mode":"raw","raw":"{\n  \"stock\": 0\n}"},
+        "url": "{{baseUrl}}/api/v1/productos/{{productId}}"
+      }
+    },
+    {
+      "name": "6. GET por ID",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const json = pm.response.json();",
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "pm.test('Tiene stock', function () { pm.expect(json.data).to.have.property('stock'); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{"key":"Authorization","value":"Bearer {{token}}"}],
+        "url": "{{baseUrl}}/api/v1/productos/{{productId}}"
+      }
+    },
+    {
+      "name": "7. GET listado",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const json = pm.response.json();",
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "pm.test('Todos tienen stock', function () { json.data.forEach(p => pm.expect(p).to.have.property('stock')); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{"key":"Authorization","value":"Bearer {{token}}"}],
+        "url": "{{baseUrl}}/api/v1/productos"
+      }
+    },
+    {
+      "name": "8. GET buscar teclado",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const json = pm.response.json();",
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{"key":"Authorization","value":"Bearer {{token}}"}],
+        "url": "{{baseUrl}}/api/v1/productos?buscar=teclado"
+      }
+    },
+    {
+      "name": "9. GET buscar sin coincidencias",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const json = pm.response.json();",
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "pm.test('Array vacio', function () { pm.expect(json.data).to.eql([]); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{"key":"Authorization","value":"Bearer {{token}}"}],
+        "url": "{{baseUrl}}/api/v1/productos?buscar=xyz-no-existe"
+      }
+    },
+    {
+      "name": "10. GET buscar comilla simple",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const json = pm.response.json();",
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{"key":"Authorization","value":"Bearer {{token}}"}],
+        "url": "{{baseUrl}}/api/v1/productos?buscar=%27"
+      }
+    }
+  ],
+  "variable": [
+    {"key":"baseUrl","value":"http://localhost:3000"},
+    {"key":"token","value":""},
+    {"key":"productId","value":""}
+  ]
+}

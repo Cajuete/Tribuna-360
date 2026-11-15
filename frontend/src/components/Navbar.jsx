@@ -4,7 +4,7 @@ import { Menu, X, User, Bell, CheckCircle2, Ticket, ShoppingBag, ShieldCheck, La
 import { useAuth } from '../context/auth-context';
 import Logo from './Logo';
 
-const navLinkCls = ({ isActive }) => `px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition ${isActive ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-900'}`;
+const navLinkCls = ({ isActive }) => `site-nav-link ${isActive ? 'is-active' : ''}`;
 
 export default function Navbar() {
   const { user, token, logout } = useAuth();
@@ -44,6 +44,7 @@ export default function Navbar() {
       { to: '/socios', label: 'Socios' },
       { to: '/mis-entradas', label: 'Entradas' },
       { to: '/mis-pedidos', label: 'Pedidos' },
+      { to: '/mis-pagos', label: 'Mis pagos' },
       { to: '/mis-socio', label: 'Membresía' },
       { to: '/mi-perfil', label: 'Mi Perfil' },
     );
@@ -73,6 +74,7 @@ export default function Navbar() {
       { to: '/admin?tab=pedidos', label: 'Transacciones', tab: 'pedidos' },
       { to: '/admin?tab=socios', label: 'Socios & Ingresos', tab: 'socios' },
       { to: '/admin?tab=reportes', label: 'Liquidación Taquilla', tab: 'reportes' },
+      { to: '/admin?tab=pagos', label: 'Pagos', tab: 'pagos' },
     );
   } else if (role === 'customer_support') {
     links.push(
@@ -87,6 +89,12 @@ export default function Navbar() {
       { to: '/admin?tab=tienda', label: 'Tienda', tab: 'tienda' },
       { to: '/admin?tab=socios', label: 'Socios', tab: 'socios' },
       { to: '/admin?tab=mi-club', label: 'Institución', tab: 'mi-club' },
+      { to: '/admin?tab=pagos', label: 'Pagos', tab: 'pagos' },
+    );
+  } else if (role === 'payment_manager') {
+    links.push(
+      { to: '/admin', label: 'Panel', tab: 'resumen' },
+      { to: '/admin?tab=pagos', label: 'Pagos', tab: 'pagos' },
     );
   } else if (role === 'superadmin') {
     links.push(
@@ -94,6 +102,7 @@ export default function Navbar() {
       { to: '/admin?tab=partidos', label: 'Partidos', tab: 'partidos' },
       { to: '/admin?tab=tienda', label: 'Tienda', tab: 'tienda' },
       { to: '/admin?tab=clubes', label: 'Clubes Tenants', tab: 'clubes' },
+      { to: '/admin?tab=pagos', label: 'Pagos', tab: 'pagos' },
     );
   }
 
@@ -122,7 +131,7 @@ export default function Navbar() {
   }
 
   return (
-    <header className="sticky top-0 z-50 glass border-b border-white/10 shadow-xl">
+    <header className="site-header sticky top-0 z-50 glass border-b border-white/10">
       <div className="max-w-7xl mx-auto flex justify-between items-center gap-4 px-6 py-4">
         <Link to="/" aria-label="Tribuna 360 — inicio" className="shrink-0">
           <Logo size="sm" />
@@ -130,13 +139,13 @@ export default function Navbar() {
 
         {/* Desktop Navigation */}
         {links.length > 0 && (
-          <nav className="hidden lg:flex items-center gap-1.5 bg-slate-950/85 border border-slate-800 p-1.5 rounded-2xl shadow-inner">
+          <nav className="site-nav hidden lg:flex items-center gap-1.5">
             {links.map(link => (
               link.tab ? (
                 <Link
                   key={link.to}
                   to={link.to}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap ${onAdmin && adminTab === link.tab ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-900'}`}
+                  className={`site-nav-link whitespace-nowrap ${onAdmin && adminTab === link.tab ? 'is-active' : ''}`}
                 >
                   {link.label}
                 </Link>

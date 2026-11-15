@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ShoppingCart, Trash2, Plus, Minus, CheckCircle2 } from 'lucide-react';
 import { productService } from '../api/product.service';
-import { orderService } from '../api/order.service';
+import { paymentService } from '../api/payment.service';
 import { useAuth } from '../context/auth-context';
 
 export default function Tienda() {
@@ -24,6 +24,10 @@ export default function Tienda() {
 
   const addToCart = (product, qty) => {
     setError(null);
+    if (cart.length && cart[0].product.tenant_id !== product.tenant_id) {
+      setError('El carrito solo puede incluir productos de un mismo club, porque cada club recibe sus pagos por separado.');
+      return;
+    }
     const parsedQty = Number.parseInt(qty, 10) || 1;
     const existing = cart.find(item => item.product.id === product.id);
     const currentQtyInCart = existing ? existing.quantity : 0;
@@ -70,11 +74,11 @@ export default function Tienda() {
     setCheckingOut(true);
     setError(null);
     try {
-      for (const item of cart) {
-        await orderService.create({ product_id: item.product.id, quantity: item.quantity });
-      }
+      const res = await paymentService.create('store', {
+        items: cart.map(item => ({ product_id: item.product.id, quantity: item.quantity })),
+      });
       setCart([]);
-      navigate('/mis-pedidos', { state: { message: '¡Compra del carrito realizada exitosamente!' } });
+      navigate(`/pagar/${res.data.id}`);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -190,7 +194,7 @@ export default function Tienda() {
                       onClick={handleCheckout}
                       className="btn btn-primary w-full py-3 font-bold"
                     >
-                      {checkingOut ? 'Procesando pago...' : 'Completar Compra (Pago Simulado)'}
+                      {checkingOut ? 'Preparando compra...' : 'Continuar al pago QR'}
                     </button>
                   </div>
                 </div>

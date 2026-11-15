@@ -68,7 +68,7 @@ export default function MyOrders() {
               <p className="text-xs text-gray-500 mt-1">{new Date(o.created_at).toLocaleString()}</p>
             </div>
             <span className={`text-xs px-3 py-1 rounded-full uppercase font-semibold ${STATUS_STYLES[o.status] || 'bg-gray-700 text-gray-300'}`}>
-              {STATUS_LABELS[o.status] || o.status}
+              {o.payment_id && o.status === 'pending' ? 'Pago en revisión' : STATUS_LABELS[o.status] || o.status}
             </span>
           </div>
         ))}

@@ -2,8 +2,18 @@ import { useState, useEffect } from 'react';
 import { AuthContext } from './auth-context';
 import { authService } from '../api/auth.service';
 
+const OFFLINE_USER_KEY = 'tribuna360_offline_user';
+
+const readOfflineUser = () => {
+  try {
+    return JSON.parse(localStorage.getItem(OFFLINE_USER_KEY) || 'null');
+  } catch {
+    return null;
+  }
+};
+
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(readOfflineUser);
   const [token, setToken] = useState(
     () => sessionStorage.getItem('supabase_token') || localStorage.getItem('supabase_token') || null
   );
@@ -14,13 +24,32 @@ export const AuthProvider = ({ children }) => {
     let active = true;
 
     authService.me()
-      .then(res => {
-        if (active && res.status === 'success') setUser(res.data);
+      .then((res) => {
+        if (active && res.status === 'success') {
+          setUser(res.data);
+          if (res.data?.role === 'gate_operator' || res.data?.role === 'superadmin') {
+            localStorage.setItem(OFFLINE_USER_KEY, JSON.stringify({
+              id: res.data.id,
+              role: res.data.role,
+              tenant_id: res.data.tenant_id,
+            }));
+          } else {
+            localStorage.removeItem(OFFLINE_USER_KEY);
+          }
+        }
       })
-      .catch(() => {
+      .catch((error) => {
         if (active) {
+          if (!navigator.onLine || error instanceof TypeError) {
+            const offlineUser = readOfflineUser();
+            if (offlineUser) {
+              setUser(offlineUser);
+              return;
+            }
+          }
           localStorage.removeItem('supabase_token');
           sessionStorage.removeItem('supabase_token');
+          localStorage.removeItem(OFFLINE_USER_KEY);
           setToken(null);
           setUser(null);
         }
@@ -36,6 +65,15 @@ export const AuthProvider = ({ children }) => {
     setUser(userData);
     setToken(jwtToken);
     setLoading(false);
+    if (userData?.role === 'gate_operator' || userData?.role === 'superadmin') {
+      localStorage.setItem(OFFLINE_USER_KEY, JSON.stringify({
+        id: userData.id,
+        role: userData.role,
+        tenant_id: userData.tenant_id,
+      }));
+    } else {
+      localStorage.removeItem(OFFLINE_USER_KEY);
+    }
     (remember ? localStorage : sessionStorage).setItem('supabase_token', jwtToken);
   };
 
@@ -45,6 +83,7 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
     localStorage.removeItem('supabase_token');
     sessionStorage.removeItem('supabase_token');
+    localStorage.removeItem(OFFLINE_USER_KEY);
   };
 
   return (
