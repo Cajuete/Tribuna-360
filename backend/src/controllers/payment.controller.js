@@ -297,7 +297,7 @@ const listPayments = async (req, res) => {
         await expireStalePayments();
         let query = supabase
             .from('payments')
-            .select('id, user_id, tenant_id, purchase_type, payment_method, amount, currency, status, purchase_data, proof_path, buyer_note, review_note, reviewed_at, expires_at, created_at, users(email, full_name), tenants(name)')
+            .select('id, user_id, tenant_id, purchase_type, payment_method, amount, currency, status, purchase_data, proof_path, buyer_note, review_note, reviewed_at, expires_at, created_at, users!user_id(email, full_name), tenants(name)')
             .order('created_at', { ascending: false })
             .limit(200);
         if (req.user.role !== 'superadmin') query = query.eq('tenant_id', req.user.tenant_id);
@@ -318,7 +318,7 @@ const getPayment = async (req, res) => {
     try {
         const { data: initialPayment, error: initialError } = await supabase
             .from('payments')
-            .select('id, user_id, tenant_id, purchase_type, payment_method, amount, currency, status, purchase_data, proof_path, buyer_note, review_note, reviewed_at, expires_at, created_at, users(email, full_name), tenants(name)')
+            .select('id, user_id, tenant_id, purchase_type, payment_method, amount, currency, status, purchase_data, proof_path, buyer_note, review_note, reviewed_at, expires_at, created_at, users!user_id(email, full_name), tenants(name)')
             .eq('id', req.params.id)
             .maybeSingle();
         if (initialError) throw initialError;
@@ -332,7 +332,7 @@ const getPayment = async (req, res) => {
         await expireStalePayments();
         const { data, error } = await supabase
             .from('payments')
-            .select('id, user_id, tenant_id, purchase_type, payment_method, amount, currency, status, purchase_data, proof_path, buyer_note, review_note, reviewed_at, expires_at, created_at, users(email, full_name), tenants(name)')
+            .select('id, user_id, tenant_id, purchase_type, payment_method, amount, currency, status, purchase_data, proof_path, buyer_note, review_note, reviewed_at, expires_at, created_at, users!user_id(email, full_name), tenants(name)')
             .eq('id', req.params.id)
             .maybeSingle();
         if (error) throw error;
