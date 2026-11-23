@@ -29,7 +29,8 @@ const createZone = async (req, res) => {
             ? capacityNum
             : Number.parseInt(tickets_for_sale, 10);
 
-        if (!name || !Number.isFinite(priceNum) || priceNum < 0 || !Number.isInteger(capacityNum) || capacityNum < 1 ||
+        const cleanName = typeof name === 'string' ? name.trim() : '';
+        if (!cleanName || cleanName.length > 100 || !Number.isFinite(priceNum) || priceNum < 0 || !Number.isInteger(capacityNum) || capacityNum < 1 ||
             !Number.isInteger(saleLimit) || saleLimit < 0 || saleLimit > capacityNum ||
             !['general', 'numbered'].includes(sale_mode)) {
             return res.status(400).json({ status: 'error', message: 'Datos inválidos: nombre, precio, aforo, entradas a la venta y modalidad de zona son requeridos.' });
@@ -37,7 +38,7 @@ const createZone = async (req, res) => {
 
         const { data, error } = await supabase
             .from('zones')
-            .insert([{ match_id: matchId, name, price: priceNum, capacity: capacityNum, is_enabled: enabled, tickets_for_sale: saleLimit, sale_mode }])
+            .insert([{ match_id: matchId, name: cleanName, price: priceNum, capacity: capacityNum, is_enabled: enabled, tickets_for_sale: saleLimit, sale_mode }])
             .select()
             .single();
 
@@ -71,7 +72,11 @@ const updateZone = async (req, res) => {
         if (!check.ok) return res.status(check.status).json({ status: 'error', message: check.message });
 
         const patch = {};
-        if (name) patch.name = name;
+        if (name !== undefined) {
+            const cleanName = typeof name === 'string' ? name.trim() : '';
+            if (!cleanName || cleanName.length > 100) return res.status(400).json({ status: 'error', message: 'El nombre de la zona debe tener entre 1 y 100 caracteres.' });
+            patch.name = cleanName;
+        }
         if (price !== undefined) {
             const n = Number(price);
             if (!Number.isFinite(n) || n < 0) return res.status(400).json({ status: 'error', message: 'Precio inválido.' });

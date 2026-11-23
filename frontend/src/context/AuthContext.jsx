@@ -7,7 +7,8 @@ const OFFLINE_USER_KEY = 'tribuna360_offline_user';
 const readOfflineUser = () => {
   try {
     return JSON.parse(localStorage.getItem(OFFLINE_USER_KEY) || 'null');
-  } catch {
+  } catch (error) {
+    console.debug('[Auth] No se pudo leer el usuario offline:', error);
     return null;
   }
 };

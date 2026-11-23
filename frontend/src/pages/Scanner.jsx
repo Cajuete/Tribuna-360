@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Camera, CheckCircle2, Keyboard, XCircle } from 'lucide-react';
 import { useAuth } from '../context/auth-context';
 import { ticketService } from '../api/ticket.service';
@@ -13,6 +13,8 @@ import {
 
 export default function Scanner() {
   const { user } = useAuth();
+  const tenantId = user?.tenant_id;
+  const userRole = user?.role;
   const [mode, setMode] = useState('camera');
   const [qrCode, setQrCode] = useState('');
   const [result, setResult] = useState(null);
@@ -35,7 +37,7 @@ export default function Scanner() {
   const selectedMatchIdRef = useRef(selectedMatchId);
   const syncPendingScansRef = useRef(null);
 
-  const playSound = (type) => {
+  const playSound = useCallback((type) => {
     try {
       const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       const osc = audioCtx.createOscillator();
@@ -47,26 +49,28 @@ export default function Scanner() {
       gain.connect(audioCtx.destination);
       osc.start();
       osc.stop(audioCtx.currentTime + (type === 'success' ? 0.25 : 0.4));
-    } catch {}
-  };
+    } catch (error) {
+      console.debug('[Scanner] No se pudo reproducir la señal de audio:', error);
+    }
+  }, []);
 
-  const refreshOfflineStats = async (matchId = selectedMatchId) => {
+  const refreshOfflineStats = useCallback(async (matchId = selectedMatchId) => {
     if (!matchId) return;
     try {
       setOfflineStats(await getOfflineScanStats(matchId));
     } catch (error) {
       setOfflineMessage(error.message);
     }
-  };
+  }, [selectedMatchId]);
 
-  const syncPendingScans = async (matchIds = selectedMatchId ? [selectedMatchId] : []) => {
+  const syncPendingScans = useCallback(async (matchIds = selectedMatchId ? [selectedMatchId] : []) => {
     if (!navigator.onLine || syncingRef.current) return;
     syncingRef.current = true;
     setSyncing(true);
     try {
       const allMatches = matchIds.length
         ? matchIds
-        : (await getOfflineMatches(user?.tenant_id, user?.role === 'superadmin')).map((match) => match.id);
+        : (await getOfflineMatches(tenantId, userRole === 'superadmin')).map((match) => match.id);
       let totalSynced = 0;
       let totalConflicts = 0;
       for (const matchId of allMatches) {
@@ -99,7 +103,7 @@ export default function Scanner() {
       syncingRef.current = false;
       setSyncing(false);
     }
-  };
+  }, [refreshOfflineStats, selectedMatchId, tenantId, userRole]);
   useEffect(() => {
     syncPendingScansRef.current = syncPendingScans;
   }, [syncPendingScans]);
@@ -113,7 +117,7 @@ export default function Scanner() {
     const loadMatches = async () => {
       let cached = [];
       try {
-        cached = await getOfflineMatches(user?.tenant_id, user?.role === 'superadmin');
+        cached = await getOfflineMatches(tenantId, userRole === 'superadmin');
       } catch (error) {
         if (active) setOfflineMessage(error.message);
       }
@@ -155,7 +159,7 @@ export default function Scanner() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, [user?.tenant_id]);
+  }, [tenantId, userRole]);
 
   useEffect(() => {
     if (!selectedMatchId) return;
@@ -170,7 +174,7 @@ export default function Scanner() {
     return () => { active = false; };
   }, [selectedMatchId]);
 
-  const processCode = async (code) => {
+  const processCode = useCallback(async (code) => {
     const trimmed = code.trim();
     if (!trimmed || processingRef.current) return;
 
@@ -228,7 +232,7 @@ export default function Scanner() {
       setScanning(false);
       setQrCode('');
     }
-  };
+  }, [playSound, refreshOfflineStats]);
 
   const downloadOfflineData = async () => {
     if (!selectedMatchId || downloading) return;
@@ -271,7 +275,8 @@ export default function Scanner() {
         videoRef.current.play();
       }
       setCameraActive(true);
-    } catch {
+    } catch (error) {
+      console.debug('[Scanner] Cámara no disponible:', error);
       setCameraError('Cámara no disponible. Use ingreso por código o pistola láser.');
       setCameraActive(false);
     }
@@ -286,9 +291,12 @@ export default function Scanner() {
   };
 
   useEffect(() => {
-    if (mode === 'camera') void startCamera();
-    else stopCamera();
-    return () => stopCamera();
+    if (mode !== 'camera') return undefined;
+    const scheduled = window.setTimeout(() => { void startCamera(); }, 0);
+    return () => {
+      window.clearTimeout(scheduled);
+      stopCamera();
+    };
   }, [mode]);
 
   useEffect(() => {
@@ -299,7 +307,9 @@ export default function Scanner() {
     if ('BarcodeDetector' in window) {
       try {
         detector = new window.BarcodeDetector({ formats: ['qr_code', 'code_128'] });
-      } catch {}
+      } catch (error) {
+        console.debug('[Scanner] BarcodeDetector no disponible:', error);
+      }
     }
     const scanFrame = async () => {
       if (videoRef.current && videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA && detector) {
@@ -314,13 +324,15 @@ export default function Scanner() {
           } else {
             lastCameraCode = null;
           }
-        } catch {}
+        } catch (error) {
+          console.debug('[Scanner] No se pudo analizar el fotograma:', error);
+        }
       }
       animationFrameId = requestAnimationFrame(scanFrame);
     };
     if (detector) animationFrameId = requestAnimationFrame(scanFrame);
     return () => { if (animationFrameId) cancelAnimationFrame(animationFrameId); };
-  }, [cameraActive, mode]);
+  }, [cameraActive, mode, processCode]);
 
   return (
     <div className="max-w-xl mx-auto px-6 py-12">

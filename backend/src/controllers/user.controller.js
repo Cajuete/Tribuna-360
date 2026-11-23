@@ -75,6 +75,15 @@ const createUser = async (req, res) => {
             return res.status(400).json({ status: 'error', message: 'Nombre, email y contraseña son obligatorios.' });
         }
 
+        const cleanName = full_name.trim();
+        if (cleanName.length > 150 ||
+            !/^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]*$/.test(cleanName)) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'El nombre solo puede incluir letras, espacios, apóstrofes o guiones.'
+            });
+        }
+
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
             return res.status(400).json({ status: 'error', message: 'El email no es válido.' });
         }
@@ -109,7 +118,6 @@ const createUser = async (req, res) => {
         }
 
         const cleanEmail = email.trim().toLowerCase();
-        const cleanName = full_name.trim();
 
         const { data: existing } = await supabase
             .from('users')
@@ -328,10 +336,34 @@ const updateMe = async (req, res) => {
         } = req.body;
 
         const patch = {};
-        if (first_name !== undefined) patch.first_name = String(first_name).trim() || null;
-        if (paternal_last_name !== undefined) patch.paternal_last_name = String(paternal_last_name).trim() || null;
-        if (maternal_last_name !== undefined) patch.maternal_last_name = String(maternal_last_name).trim() || null;
-        if (phone !== undefined) patch.phone = String(phone).trim() || null;
+        const nameFields = [
+            ['first_name', first_name],
+            ['paternal_last_name', paternal_last_name],
+            ['maternal_last_name', maternal_last_name],
+        ];
+        for (const [field, value] of nameFields) {
+            if (value === undefined) continue;
+            if (typeof value !== 'string' || !value.trim() || value.trim().length > 100) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Cada nombre y apellido es obligatorio y admite hasta 100 caracteres.'
+                });
+            }
+            if (!/^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]*$/.test(value.trim())) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Los nombres y apellidos solo pueden incluir letras, espacios, apóstrofes o guiones.'
+                });
+            }
+            patch[field] = value.trim();
+        }
+        if (phone !== undefined) {
+            const cleanPhone = typeof phone === 'string' ? phone.trim() : '';
+            if (!/^\+?[0-9][0-9\s-]{6,14}$/.test(cleanPhone)) {
+                return res.status(400).json({ status: 'error', message: 'El teléfono no es válido (ej: +591 71234567).' });
+            }
+            patch.phone = cleanPhone;
+        }
         if (age !== undefined) {
             const n = Number(age);
             if (!Number.isInteger(n) || n < 18 || n > 110) {
@@ -340,13 +372,19 @@ const updateMe = async (req, res) => {
             patch.age = n;
         }
         if (ci !== undefined) {
-            const clean = String(ci).replace(/[^0-9]/g, '');
-            if (clean && !/^\d{6,10}$/.test(clean)) {
+            const clean = typeof ci === 'string' ? ci.trim() : '';
+            if (!/^\d{6,10}$/.test(clean)) {
                 return res.status(400).json({ status: 'error', message: 'El C.I. solo admite números (6 a 10 dígitos).' });
             }
-            patch.ci = clean || null;
+            patch.ci = clean;
         }
-        if (ci_extension !== undefined) patch.ci_extension = ci_extension || null;
+        if (ci_extension !== undefined) {
+            const cleanExtension = typeof ci_extension === 'string' ? ci_extension.trim().toUpperCase() : '';
+            if (!/^(LP|SC|CB|OR|PT|CH|TJ|BN|PD)$/.test(cleanExtension)) {
+                return res.status(400).json({ status: 'error', message: 'La extensión del C.I. no es válida.' });
+            }
+            patch.ci_extension = cleanExtension;
+        }
 
         // Recompute full_name if name parts provided
         const { data: current } = await supabase

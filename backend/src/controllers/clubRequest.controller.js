@@ -66,6 +66,7 @@ const registerClub = async (req, res) => {
 
         if (!EMAIL_RE.test(cleanEmail) || cleanEmail.length > 254 ||
             !cleanContactName || cleanContactName.length > 150 ||
+            !/^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]*$/.test(cleanContactName) ||
             !cleanClubName || cleanClubName.length > 150 ||
             !cleanStadiumName || cleanStadiumName.length > 150 ||
             !Number.isSafeInteger(capacity) || capacity < 1 || capacity > 2147483647 ||

@@ -81,6 +81,7 @@ function StatCard({ label, value, sub }) {
 export default function AdminDashboard() {
   const { user } = useAuth();
   const role = user?.role;
+  const tenantId = user?.tenant_id;
   const isSuperadmin = role === 'superadmin';
   const isClubAdmin = role === 'club_admin';
   const isFullAdmin = isSuperadmin || isClubAdmin;
@@ -116,7 +117,6 @@ export default function AdminDashboard() {
   const [clubRequestsLoading, setClubRequestsLoading] = useState(false);
   const [reviewNotes, setReviewNotes] = useState({});
   const [saasOverview, setSaasOverview] = useState(null);
-  const [saasSettings, setSaasSettings] = useState(null);
   const [saasMsg, setSaasMsg] = useState(null);
   const [settingsForm, setSettingsForm] = useState({ payment_provider: 'simulado', payment_public_key: '', payment_secret_key: '', platform_commission_rate: 5, currency: 'BOB' });
   const [tenantForm, setTenantForm] = useState({ name: '', slug: '' });
@@ -199,27 +199,24 @@ export default function AdminDashboard() {
   };
 
   const loadClubRequests = useCallback(() => {
-    setClubRequestsLoading(true);
-    setClubRequestsError(null);
     clubRequestService.getAll('?status=pending')
       .then(res => { if (res.status === 'success') setClubRequests(res.data); })
       .catch(err => setClubRequestsError(err.message))
       .finally(() => setClubRequestsLoading(false));
   }, []);
 
-  const loadSaasOverview = () => {
+  const loadSaasOverview = useCallback(() => {
     if (!isSuperadmin) return;
     saasService.getOverview()
       .then(res => { if (res.status === 'success') setSaasOverview(res.data); })
       .catch(err => setSaasMsg({ ok: false, text: err.message }));
-  };
+  }, [isSuperadmin]);
 
-  const loadSaasSettings = () => {
+  const loadSaasSettings = useCallback(() => {
     if (!isSuperadmin) return;
     saasService.getSettings()
       .then(res => {
         if (res.status === 'success') {
-          setSaasSettings(res.data);
           setSettingsForm({
             payment_provider: res.data.payment_provider || 'simulado',
             payment_public_key: res.data.payment_public_key || '',
@@ -230,7 +227,14 @@ export default function AdminDashboard() {
         }
       })
       .catch(err => setSaasMsg({ ok: false, text: err.message }));
-  };
+  }, [isSuperadmin]);
+
+  const loadAdminMatches = useCallback(() => {
+    const qs = !isSuperadmin && tenantId ? `?tenant_id=${tenantId}` : '';
+    matchService.getAllMatches(qs)
+      .then(res => { if (res.status === 'success') setAdminMatches(res.data); })
+      .catch(err => setMatchListMsg({ ok: false, text: err.message }));
+  }, [isSuperadmin, tenantId]);
 
   useEffect(() => {
     loadTenants();
@@ -255,14 +259,7 @@ export default function AdminDashboard() {
     if (isFullAdmin || isSupport) {
       loadUsers();
     }
-  }, [role]);
-
-  const loadAdminMatches = () => {
-    const qs = !isSuperadmin && user?.tenant_id ? `?tenant_id=${user.tenant_id}` : '';
-    matchService.getAllMatches(qs)
-      .then(res => { if (res.status === 'success') setAdminMatches(res.data); })
-      .catch(err => setMatchListMsg({ ok: false, text: err.message }));
-  };
+  }, [role, isSuperadmin, isCashier, isFullAdmin, isSalesManager, isAuditor, isSupport, loadAdminMatches, loadSaasOverview, loadSaasSettings]);
 
   useEffect(() => {
     const qs = !isSuperadmin && user?.tenant_id ? `?tenant_id=${user.tenant_id}` : '';
@@ -311,11 +308,18 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
-    if (isSuperadmin && tab === 'clubes') loadClubRequests();
+    if (!isSuperadmin || tab !== 'clubes') return;
+    clubRequestService.getAll('?status=pending')
+      .then(res => { if (res.status === 'success') setClubRequests(res.data); })
+      .catch(err => setClubRequestsError(err.message))
+      .finally(() => setClubRequestsLoading(false));
   }, [tab, isSuperadmin, loadClubRequests]);
 
   useEffect(() => {
-    if (isFullAdmin && tab === 'socios') loadCancellationRequests();
+    if (!isFullAdmin || tab !== 'socios') return;
+    membershipService.getCancellationRequests()
+      .then(res => { if (res.status === 'success') setCancellationRequests(res.data); })
+      .catch(err => setCancellationRequestsError(err.message));
   }, [tab, isFullAdmin, loadCancellationRequests]);
 
   const chooseImage = (file, currentPreview, setFile, setPreview, setError) => {
@@ -367,9 +371,16 @@ export default function AdminDashboard() {
 
     const price = Number(prodForm.price);
     const stock = Number(prodForm.stock);
-
-    if (!prodForm.name.trim() || !Number.isFinite(price) || price < 0 || !Number.isInteger(stock) || stock < 0) {
-      setProdMsg({ ok: false, text: 'Completa nombre, precio (>=0) y stock (>=0).' });
+    const errors = {};
+    if (!prodForm.name.trim()) errors.product_name = 'Escribe el nombre del producto.';
+    else if (prodForm.name.trim().length > 150) errors.product_name = 'Usa hasta 150 caracteres.';
+    if (prodForm.category.trim().length > 100) errors.product_category = 'Usa hasta 100 caracteres.';
+    if (prodForm.description.trim().length > 1000) errors.product_description = 'Usa hasta 1000 caracteres.';
+    if (!Number.isFinite(price) || price < 0) errors.product_price = 'El precio debe ser mayor o igual a 0.';
+    if (!Number.isInteger(stock) || stock < 0) errors.product_stock = 'El stock debe ser un entero mayor o igual a 0.';
+    if (isSuperadmin && !prodForm.tenant_id) errors.product_tenant = 'Selecciona el club.';
+    if (Object.keys(errors).length) {
+      setProdMsg({ ok: false, text: 'Revisa los campos marcados antes de guardar.' });
       return;
     }
 
@@ -421,9 +432,15 @@ export default function AdminDashboard() {
 
     const price = Number(editProductForm.price);
     const stock = Number(editProductForm.stock);
-
-    if (!editProductForm.name.trim() || !Number.isFinite(price) || price < 0 || !Number.isInteger(stock) || stock < 0) {
-      setProdListMsg({ ok: false, text: 'Completa nombre, precio (>=0) y stock (>=0).' });
+    const errors = {};
+    if (!editProductForm.name.trim()) errors.edit_product_name = 'Escribe el nombre del producto.';
+    else if (editProductForm.name.trim().length > 150) errors.edit_product_name = 'Usa hasta 150 caracteres.';
+    if (editProductForm.category.trim().length > 100) errors.edit_product_category = 'Usa hasta 100 caracteres.';
+    if (editProductForm.description.trim().length > 1000) errors.edit_product_description = 'Usa hasta 1000 caracteres.';
+    if (!Number.isFinite(price) || price < 0) errors.edit_product_price = 'El precio debe ser mayor o igual a 0.';
+    if (!Number.isInteger(stock) || stock < 0) errors.edit_product_stock = 'El stock debe ser un entero mayor o igual a 0.';
+    if (Object.keys(errors).length) {
+      setProdListMsg({ ok: false, text: 'Revisa los campos marcados antes de guardar.' });
       return;
     }
 
@@ -508,6 +525,29 @@ export default function AdminDashboard() {
   const handleZoneSubmit = async (e) => {
     e.preventDefault();
     setZoneMsg(null);
+    const price = Number(zoneForm.price);
+    const capacity = Number(zoneForm.capacity);
+    const saleLimit = zoneForm.tickets_for_sale === '' ? capacity : Number(zoneForm.tickets_for_sale);
+    if (!zoneForm.name.trim()) {
+      setZoneMsg({ ok: false, text: 'Escribe el nombre de la zona.' });
+      return;
+    }
+    if (zoneForm.name.trim().length > 100) {
+      setZoneMsg({ ok: false, text: 'El nombre de la zona debe tener hasta 100 caracteres.' });
+      return;
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      setZoneMsg({ ok: false, text: 'El precio debe ser mayor o igual a 0.' });
+      return;
+    }
+    if (!Number.isInteger(capacity) || capacity < 1) {
+      setZoneMsg({ ok: false, text: 'El aforo debe ser un entero mayor o igual a 1.' });
+      return;
+    }
+    if (!Number.isInteger(saleLimit) || saleLimit < 0 || saleLimit > capacity) {
+      setZoneMsg({ ok: false, text: 'Las entradas a la venta deben ser enteras y no superar el aforo.' });
+      return;
+    }
     try {
       const res = await matchService.addZone(zoneMatchId, zoneForm);
       setZoneMsg({ ok: true, text: res.message });
@@ -558,6 +598,12 @@ export default function AdminDashboard() {
   const handleCreateStaff = async (e) => {
     e.preventDefault();
     setStaffMsg(null);
+    const cleanName = staffForm.full_name.trim();
+    if (!/^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]*$/.test(cleanName) ||
+      cleanName.length > 150) {
+      setStaffMsg({ ok: false, text: 'El nombre completo solo puede incluir letras, espacios, apóstrofes o guiones (máximo 150 caracteres).' });
+      return;
+    }
     setCreatingStaff(true);
     try {
       const res = await userService.create({
@@ -653,8 +699,53 @@ export default function AdminDashboard() {
     e.preventDefault();
     setMessage(null);
 
+    if (isSuperadmin && !form.tenant_id) {
+      setMessage({ ok: false, text: 'Selecciona el club del partido.' });
+      return;
+    }
+    if (!form.opponent.trim()) {
+      setMessage({ ok: false, text: 'Escribe el nombre del rival.' });
+      return;
+    }
+    if (form.opponent.trim().length > 150) {
+      setMessage({ ok: false, text: 'El rival debe tener hasta 150 caracteres.' });
+      return;
+    }
+    if (form.competition.trim().length > 150) {
+      setMessage({ ok: false, text: 'La competencia debe tener hasta 150 caracteres.' });
+      return;
+    }
+    if (form.stadium_name.trim().length > 150) {
+      setMessage({ ok: false, text: 'El estadio debe tener hasta 150 caracteres.' });
+      return;
+    }
+    if (form.matchday !== '' && (!Number.isInteger(Number(form.matchday)) || Number(form.matchday) < 1)) {
+      setMessage({ ok: false, text: 'La jornada debe ser un entero mayor o igual a 1.' });
+      return;
+    }
+    if (form.match_date && Number.isNaN(new Date(form.match_date).getTime())) {
+      setMessage({ ok: false, text: 'La fecha y hora del partido no son válidas.' });
+      return;
+    }
+    const lat = form.latitude === '' ? null : Number(form.latitude);
+    const lng = form.longitude === '' ? null : Number(form.longitude);
+    if ((lat !== null || lng !== null) &&
+      (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180)) {
+      setMessage({ ok: false, text: 'Las coordenadas deben incluir latitud y longitud válidas.' });
+      return;
+    }
+
     const zones = draftZones.filter(z => z.name.trim() || z.price !== '' || z.capacity !== '');
-    const invalidZone = zones.find(z => !z.name.trim() || z.price === '' || z.capacity === '' || Number(z.price) < 0 || Number(z.capacity) < 1);
+    const invalidZone = zones.find(z => {
+      const zoneCapacity = Number(z.capacity);
+      const zonePrice = Number(z.price);
+      const zoneSaleLimit = z.tickets_for_sale === '' ? zoneCapacity : Number(z.tickets_for_sale);
+      return !z.name.trim() || z.name.trim().length > 100 ||
+        z.price === '' || z.capacity === '' ||
+        !Number.isFinite(zonePrice) || zonePrice < 0 ||
+        !Number.isInteger(zoneCapacity) || zoneCapacity < 1 ||
+        !Number.isInteger(zoneSaleLimit) || zoneSaleLimit < 0 || zoneSaleLimit > zoneCapacity;
+    });
     if (invalidZone) {
       setMessage({ ok: false, text: 'Completa nombre, precio y aforo de cada zona (aforo mínimo 1).' });
       return;
@@ -731,6 +822,22 @@ export default function AdminDashboard() {
   const handleEditSave = async (e) => {
     e.preventDefault();
     setMatchListMsg(null);
+    if (!editForm.opponent.trim()) {
+      setMatchListMsg({ ok: false, text: 'Escribe el nombre del rival.' });
+      return;
+    }
+    if (editForm.opponent.trim().length > 150 || editForm.competition.trim().length > 150 || editForm.stadium_name.trim().length > 150) {
+      setMatchListMsg({ ok: false, text: 'Rival, competencia y estadio deben tener hasta 150 caracteres.' });
+      return;
+    }
+    if (editForm.matchday !== '' && (!Number.isInteger(Number(editForm.matchday)) || Number(editForm.matchday) < 1)) {
+      setMatchListMsg({ ok: false, text: 'La jornada debe ser un entero mayor o igual a 1.' });
+      return;
+    }
+    if (editForm.match_date && Number.isNaN(new Date(editForm.match_date).getTime())) {
+      setMatchListMsg({ ok: false, text: 'La fecha y hora del partido no son válidas.' });
+      return;
+    }
     const payload = { ...editForm };
     if (!String(payload.competition || '').trim()) delete payload.competition;
     if (String(payload.matchday ?? '').trim() === '') delete payload.matchday;
@@ -1867,7 +1974,7 @@ export default function AdminDashboard() {
               <form onSubmit={handleCreateStaff} className="bg-gray-800 p-5 rounded-2xl border border-gray-700 grid grid-cols-1 md:grid-cols-2 gap-3 items-end mb-4">
                 <label>
                   <span className={labelCls}>Nombre completo</span>
-                  <input type="text" value={staffForm.full_name} onChange={e => setStaffForm({ ...staffForm, full_name: e.target.value })} required className={inputCls} />
+                  <input type="text" maxLength={150} pattern="[A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]*" title="Solo letras, espacios, apóstrofes o guiones" value={staffForm.full_name} onChange={e => setStaffForm({ ...staffForm, full_name: e.target.value })} required className={inputCls} />
                 </label>
                 <label>
                   <span className={labelCls}>Email</span>

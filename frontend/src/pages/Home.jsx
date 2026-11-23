@@ -7,9 +7,6 @@ import ClubLogo from '../components/ClubLogo';
 import hero1 from '../assets/images (1).jpg';
 import hero2 from '../assets/images (3).jpg';
 import hero3 from '../assets/images (5).jpg';
-import imgSquare from '../assets/images (2).jpg';
-import imgSmall from '../assets/images.jpg';
-import imgTiny from '../assets/images (4).jpg';
 import heroPng from '../assets/hero.png';
 
 const SLIDES = [

@@ -5,6 +5,9 @@ import { clubRequestService } from '../api/clubRequest.service';
 import { uploadService } from '../api/upload.service';
 
 const inputCls = 'input';
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_NAME_LENGTH = 150;
+const PERSON_NAME_RE = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]*$/;
 
 export default function Unete() {
   const [step, setStep] = useState(1);
@@ -32,6 +35,7 @@ export default function Unete() {
   const [statusLoading, setStatusLoading] = useState(false);
   const [statusError, setStatusError] = useState(null);
   const [copyMessage, setCopyMessage] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
 
   useEffect(() => {
     associationService
@@ -44,7 +48,8 @@ export default function Unete() {
 
   const handleAssociation = id => {
     const a = associations.find(x => x.id === id);
-    setClub({ ...club, association_id: id, department: a ? a.department : '' });
+    setClub(current => ({ ...current, association_id: id, department: a ? a.department : '' }));
+    setFieldErrors(current => ({ ...current, association_id: undefined, department: undefined }));
   };
 
   useEffect(() => {
@@ -81,10 +86,23 @@ export default function Unete() {
   const goStep2 = e => {
     e.preventDefault();
     setError(null);
-    if (!club.club_name.trim() || !club.stadium_name.trim() ||
-        !Number.isInteger(Number(club.stadium_capacity)) || Number(club.stadium_capacity) < 1 ||
-        !club.association_id) {
-      setError('Completa nombre del club, estadio, capacidad y asociación para continuar.');
+    const errors = {};
+    if (!club.club_name.trim()) errors.club_name = 'Escribe el nombre del club.';
+    else if (club.club_name.trim().length > MAX_NAME_LENGTH) errors.club_name = 'Usa hasta 150 caracteres.';
+    if (!club.stadium_name.trim()) errors.stadium_name = 'Escribe el nombre del estadio.';
+    else if (club.stadium_name.trim().length > MAX_NAME_LENGTH) errors.stadium_name = 'Usa hasta 150 caracteres.';
+    const capacity = Number(club.stadium_capacity);
+    if (!Number.isSafeInteger(capacity) || capacity < 1 || capacity > 2147483647) {
+      errors.stadium_capacity = 'Indica una capacidad entera entre 1 y 2.147.483.647.';
+    }
+    if (!club.association_id) errors.association_id = 'Selecciona una asociación.';
+    if (!club.department.trim()) errors.department = 'Escribe el departamento.';
+    else if (club.department.trim().length > 100) errors.department = 'Usa hasta 100 caracteres.';
+    if (club.personeria.trim().length > 100) errors.personeria = 'Usa hasta 100 caracteres.';
+    if (club.run_code.trim().length > 100) errors.run_code = 'Usa hasta 100 caracteres.';
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      document.getElementById(Object.keys(errors)[0])?.focus();
       return;
     }
     setStep(2);
@@ -93,6 +111,19 @@ export default function Unete() {
   const handleSubmit = async e => {
     e.preventDefault();
     setError(null);
+    const errors = {};
+    if (!representative.full_name.trim()) errors.contact_name = 'Escribe el nombre del representante.';
+    else if (representative.full_name.trim().length > MAX_NAME_LENGTH) errors.contact_name = 'Usa hasta 150 caracteres.';
+    else if (!PERSON_NAME_RE.test(representative.full_name.trim())) errors.contact_name = 'El nombre solo puede incluir letras, espacios, apóstrofes o guiones.';
+    if (!EMAIL_RE.test(representative.email.trim()) || representative.email.trim().length > 254) {
+      errors.contact_email = 'Escribe un correo válido (máximo 254 caracteres).';
+    }
+    if (!privacyConsent) errors.privacy_consent = 'Debes aceptar el uso de datos para continuar.';
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      document.getElementById(Object.keys(errors)[0])?.focus();
+      return;
+    }
     setSending(true);
     try {
       let logo_url = null;
@@ -154,7 +185,8 @@ export default function Unete() {
     try {
       await navigator.clipboard.writeText(statusToken);
       setCopyMessage('Código copiado.');
-    } catch {
+    } catch (error) {
+      console.debug('[ClubRequest] No se pudo copiar el código:', error);
       setCopyMessage('No se pudo copiar; selecciónalo y cópialo manualmente.');
     }
   };
@@ -209,16 +241,20 @@ export default function Unete() {
             {error && <p className="mb-4 alert-error">{error}</p>}
             {associationError && <p className="mb-4 alert-error">{associationError}</p>}
             {step === 1 && (
-              <form onSubmit={goStep2} className="space-y-4">
+              <form onSubmit={goStep2} className="space-y-4" noValidate>
             <input
               type="text"
               placeholder="Nombre del club"
+              id="club_name"
               value={club.club_name}
-              onChange={e => setClub({ ...club, club_name: e.target.value })}
+              onChange={e => setClub(current => ({ ...current, club_name: e.target.value }))}
               required
               maxLength={150}
-              className={inputCls}
+              aria-invalid={Boolean(fieldErrors.club_name)}
+              aria-describedby={fieldErrors.club_name ? 'club_name-error' : undefined}
+              className={`${inputCls} ${fieldErrors.club_name ? 'border-rose-500/60' : ''}`}
             />
+            {fieldErrors.club_name && <p id="club_name-error" className="text-xs text-rose-400">{fieldErrors.club_name}</p>}
             <div>
               <label className="block text-sm text-gray-300 mb-2">Escudo del club (opcional)</label>
               <div className="flex items-center gap-4">
@@ -255,61 +291,85 @@ export default function Unete() {
             <input
               type="text"
               placeholder="Nombre del estadio"
+              id="stadium_name"
               value={club.stadium_name}
-              onChange={e => setClub({ ...club, stadium_name: e.target.value })}
+              onChange={e => setClub(current => ({ ...current, stadium_name: e.target.value }))}
               required
               maxLength={150}
-              className={inputCls}
+              aria-invalid={Boolean(fieldErrors.stadium_name)}
+              aria-describedby={fieldErrors.stadium_name ? 'stadium_name-error' : undefined}
+              className={`${inputCls} ${fieldErrors.stadium_name ? 'border-rose-500/60' : ''}`}
             />
+            {fieldErrors.stadium_name && <p id="stadium_name-error" className="text-xs text-rose-400">{fieldErrors.stadium_name}</p>}
             <input
               type="number"
               placeholder="Capacidad del estadio"
               min="1"
               max="2147483647"
+              id="stadium_capacity"
               value={club.stadium_capacity}
-              onChange={e => setClub({ ...club, stadium_capacity: e.target.value })}
+              onChange={e => setClub(current => ({ ...current, stadium_capacity: e.target.value }))}
               required
-              className={inputCls}
+              aria-invalid={Boolean(fieldErrors.stadium_capacity)}
+              aria-describedby={fieldErrors.stadium_capacity ? 'stadium_capacity-error' : undefined}
+              className={`${inputCls} ${fieldErrors.stadium_capacity ? 'border-rose-500/60' : ''}`}
             />
+            {fieldErrors.stadium_capacity && <p id="stadium_capacity-error" className="text-xs text-rose-400">{fieldErrors.stadium_capacity}</p>}
             <select
+              id="association_id"
               value={club.association_id}
               onChange={e => handleAssociation(e.target.value)}
               required
-              className={inputCls}
+              aria-invalid={Boolean(fieldErrors.association_id)}
+              aria-describedby={fieldErrors.association_id ? 'association_id-error' : undefined}
+              className={`${inputCls} ${fieldErrors.association_id ? 'border-rose-500/60' : ''}`}
             >
               <option value="">Selecciona tu asociación (Federación Boliviana de Fútbol)...</option>
               {associations.map(a => (
                 <option key={a.id} value={a.id}>{a.name}</option>
               ))}
             </select>
+            {fieldErrors.association_id && <p id="association_id-error" className="text-xs text-rose-400">{fieldErrors.association_id}</p>}
             <input
+              id="department"
               type="text"
               placeholder="Departamento"
               value={club.department}
-              onChange={e => setClub({ ...club, department: e.target.value })}
+              onChange={e => setClub(current => ({ ...current, department: e.target.value }))}
               required
               maxLength={100}
-              className={inputCls}
+              aria-invalid={Boolean(fieldErrors.department)}
+              aria-describedby={fieldErrors.department ? 'department-error' : undefined}
+              className={`${inputCls} ${fieldErrors.department ? 'border-rose-500/60' : ''}`}
             />
+            {fieldErrors.department && <p id="department-error" className="text-xs text-rose-400">{fieldErrors.department}</p>}
             <p className="text-xs text-gray-400">
               Personería jurídica y código RUN son referencias opcionales para la verificación; no necesitas adjuntar documentos en esta etapa.
             </p>
             <input
               type="text"
               placeholder="Personería Jurídica de la Gobernación (opcional)"
+              id="personeria"
               value={club.personeria}
-              onChange={e => setClub({ ...club, personeria: e.target.value })}
+              onChange={e => setClub(current => ({ ...current, personeria: e.target.value }))}
               maxLength={100}
-              className={inputCls}
+              aria-invalid={Boolean(fieldErrors.personeria)}
+              aria-describedby={fieldErrors.personeria ? 'personeria-error' : undefined}
+              className={`${inputCls} ${fieldErrors.personeria ? 'border-rose-500/60' : ''}`}
             />
+            {fieldErrors.personeria && <p id="personeria-error" className="text-xs text-rose-400">{fieldErrors.personeria}</p>}
             <input
               type="text"
               placeholder="Código RUN del Viceministerio de Deportes (opcional)"
+              id="run_code"
               value={club.run_code}
-              onChange={e => setClub({ ...club, run_code: e.target.value })}
+              onChange={e => setClub(current => ({ ...current, run_code: e.target.value }))}
               maxLength={100}
-              className={inputCls}
+              aria-invalid={Boolean(fieldErrors.run_code)}
+              aria-describedby={fieldErrors.run_code ? 'run_code-error' : undefined}
+              className={`${inputCls} ${fieldErrors.run_code ? 'border-rose-500/60' : ''}`}
             />
+            {fieldErrors.run_code && <p id="run_code-error" className="text-xs text-rose-400">{fieldErrors.run_code}</p>}
             <button
               type="submit"
               className="btn btn-primary w-full"
@@ -320,38 +380,50 @@ export default function Unete() {
             )}
 
             {step === 2 && (
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit} className="space-y-4" noValidate>
             <p className="text-sm text-gray-300 glass border border-emerald-700/40 rounded-xl p-3">
               Club: <span className="text-emerald-400 font-medium">{club.club_name}</span>. La información se revisará antes de crear el club o asignar permisos.
             </p>
             <input
               type="text"
               placeholder="Tu nombre completo"
+              id="contact_name"
               value={representative.full_name}
-              onChange={e => setRepresentative({ ...representative, full_name: e.target.value })}
+              onChange={e => setRepresentative(current => ({ ...current, full_name: e.target.value }))}
               required
               maxLength={150}
-              className={inputCls}
+              aria-invalid={Boolean(fieldErrors.contact_name)}
+              aria-describedby={fieldErrors.contact_name ? 'contact_name-error' : undefined}
+              className={`${inputCls} ${fieldErrors.contact_name ? 'border-rose-500/60' : ''}`}
             />
+            {fieldErrors.contact_name && <p id="contact_name-error" className="text-xs text-rose-400">{fieldErrors.contact_name}</p>}
             <input
               type="email"
               placeholder="Correo de contacto"
+              id="contact_email"
               value={representative.email}
-              onChange={e => setRepresentative({ ...representative, email: e.target.value })}
+              onChange={e => setRepresentative(current => ({ ...current, email: e.target.value }))}
               required
               maxLength={254}
-              className={inputCls}
+              aria-invalid={Boolean(fieldErrors.contact_email)}
+              aria-describedby={fieldErrors.contact_email ? 'contact_email-error' : undefined}
+              className={`${inputCls} ${fieldErrors.contact_email ? 'border-rose-500/60' : ''}`}
             />
+            {fieldErrors.contact_email && <p id="contact_email-error" className="text-xs text-rose-400">{fieldErrors.contact_email}</p>}
             <label className="flex items-start gap-3 text-sm text-gray-300">
               <input
                 type="checkbox"
                 checked={privacyConsent}
                 onChange={e => setPrivacyConsent(e.target.checked)}
                 required
+                id="privacy_consent"
+                aria-invalid={Boolean(fieldErrors.privacy_consent)}
+                aria-describedby={fieldErrors.privacy_consent ? 'privacy_consent-error' : undefined}
                 className="mt-1 accent-emerald-500"
               />
               <span>Acepto que Tribuna 360 use estos datos para evaluar y dar seguimiento a esta solicitud.</span>
             </label>
+            {fieldErrors.privacy_consent && <p id="privacy_consent-error" className="text-xs text-rose-400">{fieldErrors.privacy_consent}</p>}
             <div className="flex gap-3">
               <button
                 type="button"

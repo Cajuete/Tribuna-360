@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { paymentService } from '../api/payment.service';
 
@@ -20,16 +20,14 @@ export default function PaymentCheckout() {
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
 
-  const loadPayment = () => paymentService.get(paymentId)
+  const loadPayment = useCallback(() => paymentService.get(paymentId)
     .then(res => setPayment(res.data))
     .catch(err => setError(err.message))
-    .finally(() => setLoading(false));
+    .finally(() => setLoading(false)), [paymentId]);
 
   useEffect(() => {
-    setLoading(true);
-    setError(null);
     loadPayment();
-  }, [paymentId]);
+  }, [paymentId, loadPayment]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();

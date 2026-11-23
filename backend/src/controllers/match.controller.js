@@ -65,7 +65,9 @@ const createMatch = async (req, res) => {
             tenant_id = req.user.tenant_id;
         }
 
-        if (!tenant_id || !opponent || !opponent.trim() || !match_date || !stadium_name || !stadium_name.trim()) {
+        if (!tenant_id || !opponent || !opponent.trim() || opponent.trim().length > 150 ||
+            !match_date || !stadium_name || !stadium_name.trim() || stadium_name.trim().length > 150 ||
+            (competition && String(competition).trim().length > 150)) {
             return res.status(400).json({ status: 'error', message: 'Faltan campos obligatorios para programar el partido.' });
         }
 
@@ -167,14 +169,16 @@ const updateMatch = async (req, res) => {
         const patch = {};
 
         if (has('opponent')) {
-            if (!req.body.opponent || !req.body.opponent.trim()) {
+            if (!req.body.opponent || !req.body.opponent.trim() || req.body.opponent.trim().length > 150) {
                 return res.status(400).json({ status: 'error', message: 'El rival no puede estar vacío.' });
             }
             patch.opponent = req.body.opponent.trim();
         }
 
         if (has('competition')) {
-            patch.competition = req.body.competition ? String(req.body.competition).trim() : null;
+            const competition = req.body.competition ? String(req.body.competition).trim() : '';
+            if (competition.length > 150) return res.status(400).json({ status: 'error', message: 'La competencia debe tener hasta 150 caracteres.' });
+            patch.competition = competition || null;
         }
 
         if (has('matchday')) {
@@ -193,7 +197,7 @@ const updateMatch = async (req, res) => {
         }
 
         if (has('stadium_name')) {
-            if (!req.body.stadium_name || !req.body.stadium_name.trim()) {
+            if (!req.body.stadium_name || !req.body.stadium_name.trim() || req.body.stadium_name.trim().length > 150) {
                 return res.status(400).json({ status: 'error', message: 'El estadio no puede estar vacío.' });
             }
             patch.stadium_name = req.body.stadium_name.trim();

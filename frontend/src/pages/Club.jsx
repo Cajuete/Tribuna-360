@@ -21,7 +21,7 @@ export default function Club() {
 }
 
 function ClubSpace({ slug }) {
-  const { user, token } = useAuth();
+  const { token } = useAuth();
   const navigate = useNavigate();
   const [tenant, setTenant] = useState(null);
   const [matches, setMatches] = useState([]);
@@ -115,9 +115,6 @@ function ClubSpace({ slug }) {
   if (!tenant) {
     return <p className="text-center text-gray-400 py-16">{error || 'No se pudo cargar el club.'}</p>;
   }
-
-  const canManage = user && (user.role === 'superadmin' || (user.tenant_id && user.tenant_id === tenant.id));
-  const isClubAdmin = user && user.tenant_id === tenant.id;
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-10">

@@ -44,7 +44,7 @@ export default function MyHistory() {
       )}
 
       <div className="space-y-4">
-        {items.map((it, idx) => {
+        {items.map((it) => {
           if (it.type === 'ticket') {
             const t = it.data;
             return (

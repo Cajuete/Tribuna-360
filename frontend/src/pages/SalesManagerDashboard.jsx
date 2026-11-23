@@ -1,12 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/auth-context';
 import { promotionService } from '../api/promotion.service';
 import { packageService } from '../api/package.service';
 import { sponsorService } from '../api/sponsor.service';
-import { matchService } from '../api/match.service';
 
 const inputCls = 'w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-white';
 const labelCls = 'text-xs text-gray-400 block mb-1';
+const HTTP_URL_RE = /^https?:\/\/[^\s]+$/i;
 
 function Notice({ msg }) {
   if (!msg) return null;
@@ -38,46 +38,72 @@ export default function SalesManagerDashboard() {
   const [metrics, setMetrics] = useState(null);
   const [metricsMsg, setMetricsMsg] = useState(null);
   const [tenantId, setTenantId] = useState(user?.tenant_id || '');
+  const [formErrors, setFormErrors] = useState({});
 
   const isSuperadmin = user?.role === 'superadmin';
 
-  const loadPromotions = () => {
+  const loadPromotions = useCallback(() => {
     const qs = isSuperadmin && tenantId ? `?tenant_id=${tenantId}` : '';
     promotionService.getAll(qs)
       .then(res => { if (res.success) setPromotions(res.data); })
       .catch(err => setPromoMsg({ ok: false, text: err.message }));
-  };
+  }, [isSuperadmin, tenantId]);
 
-  const loadPackages = () => {
+  const loadPackages = useCallback(() => {
     const qs = isSuperadmin && tenantId ? `?tenant_id=${tenantId}` : '';
     packageService.getAll(qs)
       .then(res => { if (res.success) setPackages(res.data); })
       .catch(err => setPackageMsg({ ok: false, text: err.message }));
-  };
+  }, [isSuperadmin, tenantId]);
 
-  const loadSponsors = () => {
+  const loadSponsors = useCallback(() => {
     const qs = isSuperadmin && tenantId ? `?tenant_id=${tenantId}` : '';
     sponsorService.getAll(qs)
       .then(res => { if (res.success) setSponsors(res.data); })
       .catch(err => setSponsorMsg({ ok: false, text: err.message }));
-  };
+  }, [isSuperadmin, tenantId]);
 
-  const loadMetrics = () => {
+  const loadMetrics = useCallback(() => {
     const qs = isSuperadmin && tenantId ? `?tenant_id=${tenantId}` : '';
     promotionService.getMetrics(qs)
       .then(res => { if (res.success) setMetrics(res.data); })
       .catch(err => setMetricsMsg({ ok: false, text: err.message }));
-  };
+  }, [isSuperadmin, tenantId]);
 
   useEffect(() => {
     loadPromotions();
     loadPackages();
     loadSponsors();
     loadMetrics();
-  }, [tenantId]);
+  }, [loadMetrics, loadPackages, loadPromotions, loadSponsors]);
 
   const handlePromoSubmit = async (e) => {
     e.preventDefault();
+    const value = Number(promoForm.discount_value);
+    const maxUses = promoForm.max_uses === '' ? null : Number(promoForm.max_uses);
+    const errors = {};
+    if (!promoForm.code.trim()) errors.promo_code = 'Escribe un código.';
+    else if (promoForm.code.trim().length > 50) errors.promo_code = 'Usa hasta 50 caracteres.';
+    if (!Number.isFinite(value) || value < 0 ||
+      (promoForm.discount_type === 'percentage' && value > 100)) {
+      errors.promo_value = promoForm.discount_type === 'percentage'
+        ? 'El porcentaje debe estar entre 0 y 100.'
+        : 'El monto debe ser mayor o igual a 0.';
+    }
+    if (promoForm.description.length > 500) errors.promo_description = 'Usa hasta 500 caracteres.';
+    if (promoForm.zone_name.length > 100) errors.promo_zone = 'Usa hasta 100 caracteres.';
+    if (maxUses !== null && (!Number.isInteger(maxUses) || maxUses < 1)) {
+      errors.promo_max_uses = 'Los usos máximos deben ser un entero mayor o igual a 1.';
+    }
+    if (promoForm.starts_at && promoForm.ends_at &&
+      new Date(promoForm.ends_at) <= new Date(promoForm.starts_at)) {
+      errors.promo_dates = 'La fecha de fin debe ser posterior a la de inicio.';
+    }
+    setFormErrors(errors);
+    if (Object.keys(errors).length) {
+      setPromoMsg({ ok: false, text: 'Revisa los campos marcados antes de guardar.' });
+      return;
+    }
     try {
       const payload = { ...promoForm, tenant_id: isSuperadmin ? tenantId : undefined };
       if (editingPromoId) {
@@ -123,8 +149,25 @@ export default function SalesManagerDashboard() {
   };
   const handlePackageSubmit = async (e) => {
     e.preventDefault();
+    const price = Number(packageForm.price);
+    const errors = {};
+    if (!packageForm.name.trim()) errors.package_name = 'Escribe el nombre del paquete.';
+    else if (packageForm.name.trim().length > 150) errors.package_name = 'Usa hasta 150 caracteres.';
+    if (!Number.isFinite(price) || price < 0) errors.package_price = 'El precio debe ser mayor o igual a 0.';
+    if (packageForm.description.length > 500) errors.package_description = 'Usa hasta 500 caracteres.';
+    let items = [];
     try {
-      const items = JSON.parse(packageForm.items || '[]');
+      items = JSON.parse(packageForm.items || '[]');
+      if (!Array.isArray(items)) throw new Error('Los items deben ser una lista.');
+    } catch {
+      errors.package_items = 'Los items deben tener formato JSON de lista.';
+    }
+    setFormErrors(errors);
+    if (Object.keys(errors).length) {
+      setPackageMsg({ ok: false, text: 'Revisa los campos marcados antes de guardar.' });
+      return;
+    }
+    try {
       const payload = { ...packageForm, items, price: Number(packageForm.price), tenant_id: isSuperadmin ? tenantId : undefined };
       if (editingPackageId) {
         await packageService.update(editingPackageId, payload);
@@ -165,6 +208,20 @@ export default function SalesManagerDashboard() {
 
   const handleSponsorSubmit = async (e) => {
     e.preventDefault();
+    const errors = {};
+    if (!sponsorForm.name.trim()) errors.sponsor_name = 'Escribe el nombre del patrocinador.';
+    else if (sponsorForm.name.trim().length > 150) errors.sponsor_name = 'Usa hasta 150 caracteres.';
+    if (sponsorForm.logo_url && !HTTP_URL_RE.test(sponsorForm.logo_url.trim())) {
+      errors.sponsor_logo = 'Usa una URL válida que comience con http:// o https://.';
+    }
+    if (sponsorForm.link && !HTTP_URL_RE.test(sponsorForm.link.trim())) {
+      errors.sponsor_link = 'Usa una URL válida que comience con http:// o https://.';
+    }
+    setFormErrors(errors);
+    if (Object.keys(errors).length) {
+      setSponsorMsg({ ok: false, text: 'Revisa los campos marcados antes de guardar.' });
+      return;
+    }
     try {
       const payload = { ...sponsorForm, tenant_id: isSuperadmin ? tenantId : undefined };
       if (editingSponsorId) {
@@ -232,10 +289,11 @@ export default function SalesManagerDashboard() {
       {tab === 'promociones' && (
         <div className="space-y-6">
           <Notice msg={promoMsg} />
-          <form onSubmit={handlePromoSubmit} className="bg-gray-800 p-5 rounded-2xl border border-gray-700 grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+          <form onSubmit={handlePromoSubmit} noValidate className="bg-gray-800 p-5 rounded-2xl border border-gray-700 grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
             <label>
               <span className={labelCls}>Código</span>
-              <input className={inputCls} value={promoForm.code} onChange={e => setPromoForm({ ...promoForm, code: e.target.value })} required />
+              <input id="promo_code" maxLength={50} aria-invalid={Boolean(formErrors.promo_code)} className={`${inputCls} ${formErrors.promo_code ? 'border-rose-500/60' : ''}`} value={promoForm.code} onChange={e => setPromoForm({ ...promoForm, code: e.target.value })} required />
+              {formErrors.promo_code && <span className="text-xs text-rose-400 mt-1 block">{formErrors.promo_code}</span>}
             </label>
             <label>
               <span className={labelCls}>Tipo</span>
@@ -246,7 +304,8 @@ export default function SalesManagerDashboard() {
             </label>
             <label>
               <span className={labelCls}>Valor</span>
-              <input type="number" min="0" step="0.01" className={inputCls} value={promoForm.discount_value} onChange={e => setPromoForm({ ...promoForm, discount_value: e.target.value })} required />
+              <input id="promo_value" type="number" min="0" max={promoForm.discount_type === 'percentage' ? 100 : undefined} step="0.01" aria-invalid={Boolean(formErrors.promo_value)} className={`${inputCls} ${formErrors.promo_value ? 'border-rose-500/60' : ''}`} value={promoForm.discount_value} onChange={e => setPromoForm({ ...promoForm, discount_value: e.target.value })} required />
+              {formErrors.promo_value && <span className="text-xs text-rose-400 mt-1 block">{formErrors.promo_value}</span>}
             </label>
             <label>
               <span className={labelCls}>Aplica a</span>
@@ -258,15 +317,18 @@ export default function SalesManagerDashboard() {
             </label>
             <label className="md:col-span-2">
               <span className={labelCls}>Descripción</span>
-              <input className={inputCls} value={promoForm.description} onChange={e => setPromoForm({ ...promoForm, description: e.target.value })} />
+              <input id="promo_description" maxLength={500} aria-invalid={Boolean(formErrors.promo_description)} className={`${inputCls} ${formErrors.promo_description ? 'border-rose-500/60' : ''}`} value={promoForm.description} onChange={e => setPromoForm({ ...promoForm, description: e.target.value })} />
+              {formErrors.promo_description && <span className="text-xs text-rose-400 mt-1 block">{formErrors.promo_description}</span>}
             </label>
             <label>
               <span className={labelCls}>Zona (opcional)</span>
-              <input className={inputCls} value={promoForm.zone_name} onChange={e => setPromoForm({ ...promoForm, zone_name: e.target.value })} placeholder="General" />
+              <input id="promo_zone" maxLength={100} aria-invalid={Boolean(formErrors.promo_zone)} className={`${inputCls} ${formErrors.promo_zone ? 'border-rose-500/60' : ''}`} value={promoForm.zone_name} onChange={e => setPromoForm({ ...promoForm, zone_name: e.target.value })} placeholder="General" />
+              {formErrors.promo_zone && <span className="text-xs text-rose-400 mt-1 block">{formErrors.promo_zone}</span>}
             </label>
             <label>
               <span className={labelCls}>Usos máximos</span>
-              <input type="number" min="1" className={inputCls} value={promoForm.max_uses} onChange={e => setPromoForm({ ...promoForm, max_uses: e.target.value })} />
+              <input id="promo_max_uses" type="number" min="1" step="1" aria-invalid={Boolean(formErrors.promo_max_uses)} className={`${inputCls} ${formErrors.promo_max_uses ? 'border-rose-500/60' : ''}`} value={promoForm.max_uses} onChange={e => setPromoForm({ ...promoForm, max_uses: e.target.value })} />
+              {formErrors.promo_max_uses && <span className="text-xs text-rose-400 mt-1 block">{formErrors.promo_max_uses}</span>}
             </label>
             <label>
               <span className={labelCls}>Inicio</span>
@@ -318,14 +380,16 @@ export default function SalesManagerDashboard() {
       {tab === 'paquetes' && (
         <div className="space-y-6">
           <Notice msg={packageMsg} />
-          <form onSubmit={handlePackageSubmit} className="bg-gray-800 p-5 rounded-2xl border border-gray-700 grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+          <form onSubmit={handlePackageSubmit} noValidate className="bg-gray-800 p-5 rounded-2xl border border-gray-700 grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
             <label>
               <span className={labelCls}>Nombre</span>
-              <input className={inputCls} value={packageForm.name} onChange={e => setPackageForm({ ...packageForm, name: e.target.value })} required />
+              <input id="package_name" maxLength={150} aria-invalid={Boolean(formErrors.package_name)} className={`${inputCls} ${formErrors.package_name ? 'border-rose-500/60' : ''}`} value={packageForm.name} onChange={e => setPackageForm({ ...packageForm, name: e.target.value })} required />
+              {formErrors.package_name && <span className="text-xs text-rose-400 mt-1 block">{formErrors.package_name}</span>}
             </label>
             <label>
               <span className={labelCls}>Precio</span>
-              <input type="number" min="0" step="0.01" className={inputCls} value={packageForm.price} onChange={e => setPackageForm({ ...packageForm, price: e.target.value })} required />
+              <input id="package_price" type="number" min="0" step="0.01" aria-invalid={Boolean(formErrors.package_price)} className={`${inputCls} ${formErrors.package_price ? 'border-rose-500/60' : ''}`} value={packageForm.price} onChange={e => setPackageForm({ ...packageForm, price: e.target.value })} required />
+              {formErrors.package_price && <span className="text-xs text-rose-400 mt-1 block">{formErrors.package_price}</span>}
             </label>
             <label>
               <span className={labelCls}>Activo</span>
@@ -340,7 +404,8 @@ export default function SalesManagerDashboard() {
             </label>
             <label className="md:col-span-3">
               <span className={labelCls}>Items (JSON)</span>
-              <textarea className={inputCls} rows={4} value={packageForm.items} onChange={e => setPackageForm({ ...packageForm, items: e.target.value })} />
+              <textarea id="package_items" rows={4} aria-invalid={Boolean(formErrors.package_items)} className={`${inputCls} ${formErrors.package_items ? 'border-rose-500/60' : ''}`} value={packageForm.items} onChange={e => setPackageForm({ ...packageForm, items: e.target.value })} />
+              {formErrors.package_items && <span className="text-xs text-rose-400 mt-1 block">{formErrors.package_items}</span>}
             </label>
             <button type="submit" className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 rounded-lg">
               {editingPackageId ? 'Guardar cambios' : 'Crear paquete'}
@@ -378,10 +443,11 @@ export default function SalesManagerDashboard() {
       {tab === 'patrocinadores' && (
         <div className="space-y-6">
           <Notice msg={sponsorMsg} />
-          <form onSubmit={handleSponsorSubmit} className="bg-gray-800 p-5 rounded-2xl border border-gray-700 grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+          <form onSubmit={handleSponsorSubmit} noValidate className="bg-gray-800 p-5 rounded-2xl border border-gray-700 grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
             <label>
               <span className={labelCls}>Nombre</span>
-              <input className={inputCls} value={sponsorForm.name} onChange={e => setSponsorForm({ ...sponsorForm, name: e.target.value })} required />
+              <input id="sponsor_name" maxLength={150} aria-invalid={Boolean(formErrors.sponsor_name)} className={`${inputCls} ${formErrors.sponsor_name ? 'border-rose-500/60' : ''}`} value={sponsorForm.name} onChange={e => setSponsorForm({ ...sponsorForm, name: e.target.value })} required />
+              {formErrors.sponsor_name && <span className="text-xs text-rose-400 mt-1 block">{formErrors.sponsor_name}</span>}
             </label>
             <label>
               <span className={labelCls}>Posicion</span>
@@ -395,11 +461,13 @@ export default function SalesManagerDashboard() {
             </label>
             <label>
               <span className={labelCls}>Logo URL</span>
-              <input className={inputCls} value={sponsorForm.logo_url} onChange={e => setSponsorForm({ ...sponsorForm, logo_url: e.target.value })} />
+              <input id="sponsor_logo" type="url" maxLength={500} aria-invalid={Boolean(formErrors.sponsor_logo)} className={`${inputCls} ${formErrors.sponsor_logo ? 'border-rose-500/60' : ''}`} value={sponsorForm.logo_url} onChange={e => setSponsorForm({ ...sponsorForm, logo_url: e.target.value })} />
+              {formErrors.sponsor_logo && <span className="text-xs text-rose-400 mt-1 block">{formErrors.sponsor_logo}</span>}
             </label>
             <label>
               <span className={labelCls}>Link</span>
-              <input className={inputCls} value={sponsorForm.link} onChange={e => setSponsorForm({ ...sponsorForm, link: e.target.value })} />
+              <input id="sponsor_link" type="url" maxLength={500} aria-invalid={Boolean(formErrors.sponsor_link)} className={`${inputCls} ${formErrors.sponsor_link ? 'border-rose-500/60' : ''}`} value={sponsorForm.link} onChange={e => setSponsorForm({ ...sponsorForm, link: e.target.value })} />
+              {formErrors.sponsor_link && <span className="text-xs text-rose-400 mt-1 block">{formErrors.sponsor_link}</span>}
             </label>
             <label className="flex items-center gap-2">
               <input type="checkbox" checked={sponsorForm.active} onChange={e => setSponsorForm({ ...sponsorForm, active: e.target.checked })} />

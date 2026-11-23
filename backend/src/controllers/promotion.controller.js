@@ -27,8 +27,18 @@ const createPromotion = async (req, res) => {
             zone_name, max_uses, starts_at, ends_at, is_active, tenant_id
         } = req.body;
 
-        if (!code || discount_value === undefined || discount_value === null) {
-            return res.status(400).json({ success: false, message: 'Código y valor de descuento son requeridos.' });
+        const cleanCode = typeof code === 'string' ? code.trim() : '';
+        const cleanDescription = typeof description === 'string' ? description.trim() : '';
+        const cleanZone = typeof zone_name === 'string' ? zone_name.trim() : '';
+        const value = Number(discount_value);
+        const uses = max_uses === '' || max_uses === undefined || max_uses === null ? null : Number(max_uses);
+        if (!cleanCode || cleanCode.length > 50 || discount_value === undefined || discount_value === null ||
+            !Number.isFinite(value) || value < 0 ||
+            (discount_type === 'fixed' ? false : value > 100) ||
+            cleanDescription.length > 500 || cleanZone.length > 100 ||
+            (uses !== null && (!Number.isInteger(uses) || uses < 1)) ||
+            (starts_at && ends_at && new Date(ends_at) <= new Date(starts_at))) {
+            return res.status(400).json({ success: false, message: 'Los datos de la promoción no son válidos.' });
         }
 
         const tid = req.user.role === 'superadmin' ? (tenant_id || req.user.tenant_id) : req.user.tenant_id;
@@ -38,12 +48,12 @@ const createPromotion = async (req, res) => {
 
         const payload = {
             tenant_id: tid,
-            code: String(code).trim().toUpperCase(),
-            description: description || null,
+            code: cleanCode.toUpperCase(),
+            description: cleanDescription || null,
             discount_type: discount_type === 'fixed' ? 'fixed' : 'percentage',
             discount_value: Number(discount_value),
             applies_to: ['tickets', 'products', 'both'].includes(applies_to) ? applies_to : 'both',
-            zone_name: zone_name || null,
+            zone_name: cleanZone || null,
             max_uses: max_uses ? Number(max_uses) : null,
             starts_at: starts_at || null,
             ends_at: ends_at || null,

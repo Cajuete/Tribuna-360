@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import QRCode from 'qrcode';
-import { Printer, Ticket, ShieldCheck, Calendar, MapPin } from 'lucide-react';
+import { Printer, Ticket, Calendar, MapPin } from 'lucide-react';
 import { ticketService } from '../api/ticket.service';
 
 export default function MyTickets() {

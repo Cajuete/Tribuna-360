@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { User, Check } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { useAuth } from '../context/auth-context';
 import { userService } from '../api/user.service';
 
 const CI_EXTENSIONS = ['LP', 'SC', 'CB', 'OR', 'PT', 'CH', 'TJ', 'BN', 'PD'];
+const PHONE_RE = /^\+?[0-9][0-9\s-]{6,14}$/;
+const CI_RE = /^\d{6,10}$/;
+const MAX_NAME_LENGTH = 100;
+const PERSON_NAME_RE = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]*$/;
 
 const PRESET_AVATARS = [
   { id: 'av1', bg: 'from-emerald-500 to-lime-500', label: 'Verde Tribuna' },
@@ -31,6 +34,7 @@ export default function MyProfile() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState({});
 
   useEffect(() => {
     userService.getMe()
@@ -58,7 +62,10 @@ export default function MyProfile() {
 
   const set = (key) => (e) => {
     const value = key === 'ci' ? e.target.value.replace(/[^0-9]/g, '') : e.target.value;
-    setForm({ ...form, [key]: value });
+    setForm(current => ({ ...current, [key]: value }));
+    setFieldErrors(current => ({ ...current, [key]: undefined }));
+    setError(null);
+    setSuccess(null);
   };
 
   const handleAvatarSelect = (avId) => {
@@ -72,6 +79,29 @@ export default function MyProfile() {
     e.preventDefault();
     setError(null);
     setSuccess(null);
+    const errors = {};
+    for (const [field, label] of [
+      ['first_name', 'Escribe tus nombres.'],
+      ['paternal_last_name', 'Escribe tu apellido paterno.'],
+      ['maternal_last_name', 'Escribe tu apellido materno.'],
+    ]) {
+      const value = form[field].trim();
+      if (!value) errors[field] = label;
+      else if (value.length > MAX_NAME_LENGTH) errors[field] = 'Usa hasta 100 caracteres.';
+      else if (!PERSON_NAME_RE.test(value)) errors[field] = 'Solo puede incluir letras, espacios, apóstrofes o guiones.';
+    }
+    if (!PHONE_RE.test(form.phone.trim())) errors.phone = 'Teléfono no válido (ej: +591 71234567).';
+    const age = Number(form.age);
+    if (!form.age || !Number.isInteger(age) || age < 18 || age > 110) {
+      errors.age = 'La edad debe ser un número entero entre 18 y 110.';
+    }
+    if (!CI_RE.test(form.ci.trim())) errors.ci = 'El C.I. debe tener entre 6 y 10 dígitos.';
+    if (!CI_EXTENSIONS.includes(form.ci_extension)) errors.ci_extension = 'Selecciona la extensión del C.I.';
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      document.getElementById(Object.keys(errors)[0])?.focus();
+      return;
+    }
     setSaving(true);
     try {
       const payload = {
@@ -140,38 +170,45 @@ export default function MyProfile() {
       {error && <p className="mb-4 alert-error">{error}</p>}
       {success && <p className="mb-4 alert-ok">{success}</p>}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-4" noValidate>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block mb-1.5">Nombres</label>
-            <input type="text" value={form.first_name} onChange={set('first_name')} className="input" required />
+            <label htmlFor="first_name" className="text-xs font-bold text-slate-300 uppercase tracking-wider block mb-1.5">Nombres</label>
+            <input id="first_name" name="first_name" type="text" autoComplete="given-name" maxLength={MAX_NAME_LENGTH} value={form.first_name} onChange={set('first_name')} className={`input ${fieldErrors.first_name ? 'border-rose-500/60' : ''}`} aria-invalid={Boolean(fieldErrors.first_name)} aria-describedby={fieldErrors.first_name ? 'first_name-error' : undefined} required />
+            {fieldErrors.first_name && <p id="first_name-error" className="text-xs text-rose-400 mt-1">{fieldErrors.first_name}</p>}
           </div>
           <div>
-            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block mb-1.5">Apellido paterno</label>
-            <input type="text" value={form.paternal_last_name} onChange={set('paternal_last_name')} className="input" required />
+            <label htmlFor="paternal_last_name" className="text-xs font-bold text-slate-300 uppercase tracking-wider block mb-1.5">Apellido paterno</label>
+            <input id="paternal_last_name" name="paternal_last_name" type="text" autoComplete="family-name" maxLength={MAX_NAME_LENGTH} value={form.paternal_last_name} onChange={set('paternal_last_name')} className={`input ${fieldErrors.paternal_last_name ? 'border-rose-500/60' : ''}`} aria-invalid={Boolean(fieldErrors.paternal_last_name)} aria-describedby={fieldErrors.paternal_last_name ? 'paternal_last_name-error' : undefined} required />
+            {fieldErrors.paternal_last_name && <p id="paternal_last_name-error" className="text-xs text-rose-400 mt-1">{fieldErrors.paternal_last_name}</p>}
           </div>
           <div>
-            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block mb-1.5">Apellido materno</label>
-            <input type="text" value={form.maternal_last_name} onChange={set('maternal_last_name')} className="input" required />
+            <label htmlFor="maternal_last_name" className="text-xs font-bold text-slate-300 uppercase tracking-wider block mb-1.5">Apellido materno</label>
+            <input id="maternal_last_name" name="maternal_last_name" type="text" autoComplete="additional-name" maxLength={MAX_NAME_LENGTH} value={form.maternal_last_name} onChange={set('maternal_last_name')} className={`input ${fieldErrors.maternal_last_name ? 'border-rose-500/60' : ''}`} aria-invalid={Boolean(fieldErrors.maternal_last_name)} aria-describedby={fieldErrors.maternal_last_name ? 'maternal_last_name-error' : undefined} required />
+            {fieldErrors.maternal_last_name && <p id="maternal_last_name-error" className="text-xs text-rose-400 mt-1">{fieldErrors.maternal_last_name}</p>}
           </div>
           <div>
-            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block mb-1.5">Teléfono</label>
-            <input type="tel" value={form.phone} onChange={set('phone')} className="input" required />
+            <label htmlFor="phone" className="text-xs font-bold text-slate-300 uppercase tracking-wider block mb-1.5">Teléfono</label>
+            <input id="phone" name="phone" type="tel" autoComplete="tel" maxLength={16} placeholder="+591 71234567" value={form.phone} onChange={set('phone')} className={`input ${fieldErrors.phone ? 'border-rose-500/60' : ''}`} aria-invalid={Boolean(fieldErrors.phone)} aria-describedby={fieldErrors.phone ? 'phone-error' : undefined} required />
+            {fieldErrors.phone && <p id="phone-error" className="text-xs text-rose-400 mt-1">{fieldErrors.phone}</p>}
           </div>
           <div>
-            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block mb-1.5">Edad</label>
-            <input type="number" min="18" max="110" value={form.age} onChange={set('age')} className="input" required />
+            <label htmlFor="age" className="text-xs font-bold text-slate-300 uppercase tracking-wider block mb-1.5">Edad</label>
+            <input id="age" name="age" type="number" min="18" max="110" step="1" value={form.age} onChange={set('age')} className={`input ${fieldErrors.age ? 'border-rose-500/60' : ''}`} aria-invalid={Boolean(fieldErrors.age)} aria-describedby={fieldErrors.age ? 'age-error' : undefined} required />
+            {fieldErrors.age && <p id="age-error" className="text-xs text-rose-400 mt-1">{fieldErrors.age}</p>}
           </div>
           <div>
-            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block mb-1.5">Carnet (C.I.)</label>
-            <input type="text" inputMode="numeric" value={form.ci} onChange={set('ci')} className="input" required />
+            <label htmlFor="ci" className="text-xs font-bold text-slate-300 uppercase tracking-wider block mb-1.5">Carnet (C.I.)</label>
+            <input id="ci" name="ci" type="text" inputMode="numeric" maxLength={10} value={form.ci} onChange={set('ci')} className={`input ${fieldErrors.ci ? 'border-rose-500/60' : ''}`} aria-invalid={Boolean(fieldErrors.ci)} aria-describedby={fieldErrors.ci ? 'ci-error' : undefined} required />
+            {fieldErrors.ci && <p id="ci-error" className="text-xs text-rose-400 mt-1">{fieldErrors.ci}</p>}
           </div>
           <div>
-            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block mb-1.5">Extensión</label>
-            <select value={form.ci_extension} onChange={set('ci_extension')} className="input" required>
+            <label htmlFor="ci_extension" className="text-xs font-bold text-slate-300 uppercase tracking-wider block mb-1.5">Extensión</label>
+            <select id="ci_extension" name="ci_extension" value={form.ci_extension} onChange={set('ci_extension')} className={`input ${fieldErrors.ci_extension ? 'border-rose-500/60' : ''}`} aria-invalid={Boolean(fieldErrors.ci_extension)} aria-describedby={fieldErrors.ci_extension ? 'ci_extension-error' : undefined} required>
               <option value="">Selecciona ext.</option>
               {CI_EXTENSIONS.map(d => <option key={d} value={d}>{d}</option>)}
             </select>
+            {fieldErrors.ci_extension && <p id="ci_extension-error" className="text-xs text-rose-400 mt-1">{fieldErrors.ci_extension}</p>}
           </div>
         </div>
 

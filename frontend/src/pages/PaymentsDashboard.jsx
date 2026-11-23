@@ -36,8 +36,6 @@ export default function PaymentsDashboard({ user, tenants = [] }) {
   const [selectedTenantId, setSelectedTenantId] = useState('');
 
   const canReview = ['superadmin', 'club_admin', 'payment_manager'].includes(user?.role);
-  const activeTenantId = user?.role === 'superadmin' ? selectedTenantId : user?.tenant_id;
-  const canConfigure = ['superadmin', 'club_admin'].includes(user?.role) && Boolean(activeTenantId);
 
   const loadPayments = useCallback(() => {
     setLoading(true);
@@ -49,18 +47,19 @@ export default function PaymentsDashboard({ user, tenants = [] }) {
   }, [filter]);
 
   useEffect(() => {
-    loadPayments();
-  }, [loadPayments]);
+    paymentService.getAll(filter === 'all' ? undefined : filter)
+      .then(response => setPayments(response.data || []))
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false));
+  }, [filter]);
+
+  const activeSelectedTenantId = user?.role === 'superadmin'
+    ? (selectedTenantId || tenants[0]?.id || '')
+    : user?.tenant_id;
+  const activeTenantId = activeSelectedTenantId;
+  const canConfigure = ['superadmin', 'club_admin'].includes(user?.role) && Boolean(activeTenantId);
 
   useEffect(() => {
-    if (user?.role === 'superadmin' && !selectedTenantId && tenants.length > 0) {
-      setSelectedTenantId(tenants[0].id);
-    }
-  }, [selectedTenantId, tenants, user?.role]);
-
-  useEffect(() => {
-    setSettings({ account_name: '', payment_instructions: '', qr_image_url: '' });
-    setQrFile(null);
     if (!canConfigure) return undefined;
     let cancelled = false;
     paymentService.getSettings(activeTenantId)

@@ -25,15 +25,23 @@ const getSponsors = async (req, res) => {
 const createSponsor = async (req, res) => {
     try {
         const { name, logo_url, link, position, active, tenant_id } = req.body;
-        if (!name) return res.status(400).json({ success: false, message: 'Nombre requerido.' });
+        const cleanName = typeof name === 'string' ? name.trim() : '';
+        const cleanLogo = typeof logo_url === 'string' ? logo_url.trim() : '';
+        const cleanLink = typeof link === 'string' ? link.trim() : '';
+        const urlPattern = /^https?:\/\/[^\s]+$/i;
+        if (!cleanName || cleanName.length > 150 ||
+            (cleanLogo && (!urlPattern.test(cleanLogo) || cleanLogo.length > 500)) ||
+            (cleanLink && (!urlPattern.test(cleanLink) || cleanLink.length > 500))) {
+            return res.status(400).json({ success: false, message: 'Nombre o URLs del patrocinador no son válidos.' });
+        }
         const tid = req.user.role === 'superadmin' ? (tenant_id || req.user.tenant_id) : req.user.tenant_id;
         if (!tid) return res.status(400).json({ success: false, message: 'tenant_id es requerido.' });
 
         const payload = {
             tenant_id: tid,
-            name: String(name).trim(),
-            logo_url: logo_url || null,
-            link: link || null,
+            name: cleanName,
+            logo_url: cleanLogo || null,
+            link: cleanLink || null,
             position: position || 'home',
             active: active !== false
         };

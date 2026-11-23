@@ -7,7 +7,9 @@ import { recoveryCallbackError, recoveryCallbackType, recoveryClient } from '../
 
 export default function Restablecer() {
   const [recoveryReady, setRecoveryReady] = useState(false);
-  const [linkError, setLinkError] = useState('');
+  const [linkError, setLinkError] = useState(
+    recoveryClient ? '' : 'Falta configurar la URL y la clave pública de Supabase en el frontend.'
+  );
   const [form, setForm] = useState({ password: '', confirm: '' });
   const [fieldErrors, setFieldErrors] = useState({});
   const [error, setError] = useState(null);
@@ -18,10 +20,7 @@ export default function Restablecer() {
   const { logout } = useAuth();
 
   useEffect(() => {
-    if (!recoveryClient) {
-      setLinkError('Falta configurar la URL y la clave pública de Supabase en el frontend.');
-      return undefined;
-    }
+    if (!recoveryClient) return undefined;
 
     let active = true;
     const { data: { subscription } } = recoveryClient.auth.onAuthStateChange((event, session) => {

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, NavLink, useLocation, useSearchParams } from 'react-router-dom';
-import { Menu, X, User, Bell, CheckCircle2, Ticket, ShoppingBag, ShieldCheck, LayoutDashboard } from 'lucide-react';
+import { Menu, X, User, Bell, Ticket, ShieldCheck, LayoutDashboard } from 'lucide-react';
 import { useAuth } from '../context/auth-context';
 import Logo from './Logo';
 
@@ -46,7 +46,6 @@ export default function Navbar() {
       { to: '/mis-pedidos', label: 'Pedidos' },
       { to: '/mis-pagos', label: 'Mis pagos' },
       { to: '/mis-socio', label: 'Membresía' },
-      { to: '/mi-perfil', label: 'Mi Perfil' },
     );
   } else if (role === 'gate_operator') {
     links.push({ to: '/scanner', label: 'Validador de Torniquete (PWA)' });
@@ -107,28 +106,15 @@ export default function Navbar() {
   }
 
   // Role notifications
-  let notifications = [];
-  if (role === 'fan') {
-    notifications = [
-      { id: 1, title: 'Boleto Digital QR', desc: 'Tu entrada está lista en Mis Entradas.', time: 'Activo', icon: Ticket },
-    ];
-  } else if (role === 'gate_operator') {
-    notifications = [
-      { id: 1, title: 'Validador de Puerta', desc: 'Escáner de torniquete activo en tiempo real.', time: 'Turno', icon: ShieldCheck },
-    ];
-  } else if (role === 'box_office_cashier') {
-    notifications = [
-      { id: 1, title: 'POS de Boletería Física', desc: 'Emisión y arqueo de caja operativos.', time: 'Caja', icon: Ticket },
-    ];
-  } else if (role === 'financial_auditor') {
-    notifications = [
-      { id: 1, title: 'Auditoría Activa', desc: 'Libro de transacciones y liquidación auditadas.', time: 'Finanzas', icon: ShieldCheck },
-    ];
-  } else {
-    notifications = [
-      { id: 1, title: 'Panel Enterprise', desc: `Sesión activa como ${role || 'Admin'}.`, time: 'SaaS', icon: LayoutDashboard },
-    ];
-  }
+  const notifications = role === 'fan'
+    ? [{ id: 1, title: 'Boleto Digital QR', desc: 'Tu entrada está lista en Mis Entradas.', time: 'Activo', icon: Ticket }]
+    : role === 'gate_operator'
+      ? [{ id: 1, title: 'Validador de Puerta', desc: 'Escáner de torniquete activo en tiempo real.', time: 'Turno', icon: ShieldCheck }]
+      : role === 'box_office_cashier'
+        ? [{ id: 1, title: 'POS de Boletería Física', desc: 'Emisión y arqueo de caja operativos.', time: 'Caja', icon: Ticket }]
+        : role === 'financial_auditor'
+          ? [{ id: 1, title: 'Auditoría Activa', desc: 'Libro de transacciones y liquidación auditadas.', time: 'Finanzas', icon: ShieldCheck }]
+          : [{ id: 1, title: 'Panel Enterprise', desc: `Sesión activa como ${role || 'Admin'}.`, time: 'SaaS', icon: LayoutDashboard }];
 
   return (
     <header className="site-header sticky top-0 z-50 glass border-b border-white/10">
@@ -246,7 +232,11 @@ export default function Navbar() {
       {mobileMenuOpen && (
         <div className="lg:hidden absolute top-full left-0 w-full bg-slate-950/98 backdrop-blur-xl border-b border-slate-800 p-6 shadow-2xl space-y-4 animate-in fade-in slide-in-from-top-4 duration-200">
           {token && (
-            <div className="flex items-center gap-3 p-4 rounded-2xl bg-slate-900 border border-slate-800">
+            <Link
+              to="/mi-perfil"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex items-center gap-3 p-4 rounded-2xl bg-slate-900 border border-slate-800"
+            >
               <div className="w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
                 <User className="w-5 h-5" />
               </div>
@@ -254,14 +244,7 @@ export default function Navbar() {
                 <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Rol: {role}</p>
                 <p className="font-bold text-white text-sm truncate">{user?.full_name || 'Usuario'}</p>
               </div>
-              <Link
-                to="/mi-perfil"
-                onClick={() => setMobileMenuOpen(false)}
-                className="text-xs font-bold text-emerald-400 underline shrink-0"
-              >
-                Perfil
-              </Link>
-            </div>
+            </Link>
           )}
 
           {links.length > 0 && (

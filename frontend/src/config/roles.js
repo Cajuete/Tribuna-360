@@ -43,7 +43,6 @@ export const ROLE_NAV_LINKS = {
     { to: '/mis-pedidos', label: 'Pedidos' },
     { to: '/mis-pagos', label: 'Mis pagos' },
     { to: '/mis-socio', label: 'Membresía' },
-    { to: '/mi-perfil', label: 'Mi Perfil' },
   ],
   gate_operator: [
     { to: '/scanner', label: 'Validador QR' },

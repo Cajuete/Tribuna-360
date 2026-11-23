@@ -72,7 +72,12 @@ const createProduct = async (req, res) => {
         const priceNum = Number(price);
         const stockNum = Number(stock);
 
-        if (stock === null || stock === undefined || typeof stock === 'boolean' || (typeof stock === 'string' && stock.trim() === '') || !tenant_id || !name || !name.trim() || !Number.isFinite(priceNum) || priceNum < 0 || !Number.isInteger(stockNum) || stockNum < 0) {
+        const cleanName = typeof name === 'string' ? name.trim() : '';
+        const cleanDescription = typeof description === 'string' ? description.trim() : '';
+        const cleanCategory = typeof category === 'string' ? category.trim() : '';
+        if (stock === null || stock === undefined || typeof stock === 'boolean' || (typeof stock === 'string' && stock.trim() === '') ||
+            !tenant_id || !cleanName || cleanName.length > 150 || cleanDescription.length > 1000 || cleanCategory.length > 100 ||
+            !Number.isFinite(priceNum) || priceNum < 0 || !Number.isInteger(stockNum) || stockNum < 0) {
             return res.status(400).json({
                 success: false,
                 message: 'Datos inválidos: club, nombre, precio (>=0) y stock (>=0) son requeridos.'
@@ -81,14 +86,14 @@ const createProduct = async (req, res) => {
 
         const payload = {
             tenant_id,
-            name: name.trim(),
-            description: description && description.trim() ? description.trim() : null,
+            name: cleanName,
+            description: cleanDescription || null,
             price: priceNum,
             stock: stockNum,
             image_url: image_url || null
         };
 
-        if (category && category.trim()) payload.category = category.trim();
+        if (cleanCategory) payload.category = cleanCategory;
 
         const { data, error } = await supabase
             .from('products')
@@ -137,7 +142,7 @@ const updateProduct = async (req, res) => {
         const patch = {};
 
         if (has('name')) {
-            if (!req.body.name || !req.body.name.trim()) {
+            if (!req.body.name || !req.body.name.trim() || req.body.name.trim().length > 150) {
                 return res.status(400).json({ success: false, message: 'El nombre no puede estar vacío.' });
             }
             patch.name = req.body.name.trim();

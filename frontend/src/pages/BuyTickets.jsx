@@ -38,13 +38,8 @@ export default function BuyTickets() {
 
   useEffect(() => {
     let cancelled = false;
-    if (!requiresQueue) {
-      setQueueState(token ? { status: 'disabled' } : null);
-      setQueueChecking(false);
-      return () => { cancelled = true; };
-    }
+    if (!requiresQueue) return () => { cancelled = true; };
 
-    setQueueChecking(true);
     ticketService.getQueueStatus(matchId)
       .then(res => {
         if (!cancelled) setQueueState(res.data);

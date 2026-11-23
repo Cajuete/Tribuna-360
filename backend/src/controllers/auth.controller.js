@@ -59,17 +59,33 @@ const register = async (req, res) => {
             });
         }
 
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {
+        if ([data.first_name, data.paternal_last_name, data.maternal_last_name].some(name => name.length > 100)) {
             return res.status(400).json({
                 status: 'error',
-                message: 'El email no tiene un formato vÃ¡lido.'
+                message: 'Cada campo de nombre o apellido admite hasta 100 caracteres.'
             });
         }
 
-        if (String(password).length < 8 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/\d/.test(password)) {
+        if (![data.first_name, data.paternal_last_name, data.maternal_last_name].every(name =>
+            /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]*$/.test(name))) {
             return res.status(400).json({
                 status: 'error',
-                message: 'La contraseÃ±a debe tener al menos 8 caracteres, una mayÃºscula, una minÃºscula y un nÃºmero.'
+                message: 'Los nombres y apellidos solo pueden incluir letras, espacios, apóstrofes o guiones.'
+            });
+        }
+
+        if (data.email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'El email no tiene un formato válido o supera los 254 caracteres.'
+            });
+        }
+
+        if (typeof password !== 'string' || password.length < 8 || password.length > 128 ||
+            !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/\d/.test(password)) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'La contraseña debe tener entre 8 y 128 caracteres, una mayúscula, una minúscula y un número.'
             });
         }
 

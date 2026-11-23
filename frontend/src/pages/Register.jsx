@@ -9,6 +9,8 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_RE = /^\+?[0-9][0-9\s-]{6,14}$/;
 const CI_RE = /^\d{6,10}$/;
 const CI_EXTENSIONS = ['LP', 'SC', 'CB', 'OR', 'PT', 'CH', 'TJ', 'BN', 'PD'];
+const MAX_NAME_LENGTH = 100;
+const PERSON_NAME_RE = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]*$/;
 
 export default function Register() {
   const [form, setForm] = useState({
@@ -33,7 +35,13 @@ export default function Register() {
 
   const set = (key) => (e) => {
     const value = key === 'ci' ? e.target.value.replace(/[^0-9]/g, '') : e.target.value;
-    setForm({ ...form, [key]: value });
+    setForm(current => ({ ...current, [key]: value }));
+    setFieldErrors(current => ({
+      ...current,
+      [key]: undefined,
+      ...(key === 'password' ? { confirm: undefined } : {}),
+    }));
+    setError(null);
   };
 
   const passRules = [
@@ -52,10 +60,17 @@ export default function Register() {
   const validate = () => {
     const fe = {};
     if (!form.first_name.trim()) fe.first_name = 'Escribe tus nombres.';
+    else if (form.first_name.trim().length > MAX_NAME_LENGTH) fe.first_name = 'Usa hasta 100 caracteres.';
+    else if (!PERSON_NAME_RE.test(form.first_name.trim())) fe.first_name = 'El nombre solo puede incluir letras, espacios, apóstrofes o guiones.';
     if (!form.paternal_last_name.trim()) fe.paternal_last_name = 'Escribe tu apellido paterno.';
+    else if (form.paternal_last_name.trim().length > MAX_NAME_LENGTH) fe.paternal_last_name = 'Usa hasta 100 caracteres.';
+    else if (!PERSON_NAME_RE.test(form.paternal_last_name.trim())) fe.paternal_last_name = 'El apellido solo puede incluir letras, espacios, apóstrofes o guiones.';
     if (!form.maternal_last_name.trim()) fe.maternal_last_name = 'Escribe tu apellido materno.';
-    if (!EMAIL_RE.test(form.email.trim())) fe.email = 'El email no es válido.';
-    if (passScore < 4) fe.password = 'La contraseña no cumple los requisitos.';
+    else if (form.maternal_last_name.trim().length > MAX_NAME_LENGTH) fe.maternal_last_name = 'Usa hasta 100 caracteres.';
+    else if (!PERSON_NAME_RE.test(form.maternal_last_name.trim())) fe.maternal_last_name = 'El apellido solo puede incluir letras, espacios, apóstrofes o guiones.';
+    if (!EMAIL_RE.test(form.email.trim()) || form.email.trim().length > 254) fe.email = 'Escribe un email válido (máximo 254 caracteres).';
+    if (form.password.length > 128) fe.password = 'La contraseña no puede superar 128 caracteres.';
+    else if (passScore < 4) fe.password = 'La contraseña no cumple los requisitos.';
     if (form.confirm !== form.password) fe.confirm = 'Las contraseñas no coinciden.';
     if (!PHONE_RE.test(form.phone.trim())) fe.phone = 'Teléfono no válido (ej: +591 71234567).';
     const age = Number(form.age);
@@ -63,18 +78,32 @@ export default function Register() {
     if (!CI_RE.test(form.ci.trim())) fe.ci = 'El C.I. solo admite números (ej: 12345678).';
     if (!CI_EXTENSIONS.includes(form.ci_extension)) fe.ci_extension = 'Selecciona la extensión del C.I.';
     setFieldErrors(fe);
-    return Object.keys(fe).length === 0;
+    return fe;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
-    if (!validate()) return;
+    const validationErrors = validate();
+    if (Object.keys(validationErrors).length > 0) {
+      document.getElementById(Object.keys(validationErrors)[0])?.focus();
+      return;
+    }
     setSending(true);
     setError(null);
     setSuccess(null);
     try {
-      const regRes = await authService.register({ ...form, age: Number(form.age) });
+      const regRes = await authService.register({
+        ...form,
+        first_name: form.first_name.trim(),
+        paternal_last_name: form.paternal_last_name.trim(),
+        maternal_last_name: form.maternal_last_name.trim(),
+        email: form.email.trim().toLowerCase(),
+        phone: form.phone.trim(),
+        age: Number(form.age),
+        ci: form.ci.trim(),
+        ci_extension: form.ci_extension.toUpperCase(),
+      });
       const requiresVerification = regRes?.data?.requires_verification === true;
 
       if (requiresVerification) {
@@ -86,14 +115,14 @@ export default function Register() {
 
       setSuccess('Cuenta creada exitosamente. Iniciando sesión...');
       try {
-        const loginRes = await authService.login(form.email.trim(), form.password);
+        const loginRes = await authService.login(form.email.trim().toLowerCase(), form.password);
         if (loginRes.status === 'success') {
           login(loginRes.data.user, loginRes.data.token);
           setTimeout(() => navigate('/', { replace: true }), 900);
           return;
         }
-      } catch {
-        // Si el inicio automático falla, se deja la cuenta creada para login manual.
+      } catch (error) {
+        console.debug('[Register] El inicio automático falló; la cuenta quedó creada:', error);
       }
 
       const msg = 'Cuenta creada. Ya puedes iniciar sesión.';
@@ -128,38 +157,38 @@ export default function Register() {
 
           <form onSubmit={handleSubmit} className="space-y-4" noValidate>
             <div>
-              <label className="text-xs font-semibold text-gray-400 block mb-1.5">Nombre(s)</label>
-              <input type="text" autoComplete="given-name" placeholder="Ej: Juan Carlos"
+              <label htmlFor="first_name" className="text-xs font-semibold text-gray-400 block mb-1.5">Nombre(s)</label>
+              <input id="first_name" name="first_name" type="text" autoComplete="given-name" maxLength={MAX_NAME_LENGTH} required aria-invalid={Boolean(fieldErrors.first_name)} aria-describedby={fieldErrors.first_name ? 'first_name-error' : undefined} placeholder="Ej: Juan Carlos"
                 value={form.first_name} onChange={set('first_name')} className={inputClass('first_name')} />
-              {fieldErrors.first_name && <p className="text-xs text-rose-400 mt-1">{fieldErrors.first_name}</p>}
+              {fieldErrors.first_name && <p id="first_name-error" className="text-xs text-rose-400 mt-1">{fieldErrors.first_name}</p>}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="text-xs font-semibold text-gray-400 block mb-1.5">Apellido paterno</label>
-                <input type="text" autoComplete="family-name" placeholder="Ej: Pérez"
+                <label htmlFor="paternal_last_name" className="text-xs font-semibold text-gray-400 block mb-1.5">Apellido paterno</label>
+                <input id="paternal_last_name" name="paternal_last_name" type="text" autoComplete="family-name" maxLength={MAX_NAME_LENGTH} required aria-invalid={Boolean(fieldErrors.paternal_last_name)} aria-describedby={fieldErrors.paternal_last_name ? 'paternal_last_name-error' : undefined} placeholder="Ej: Pérez"
                   value={form.paternal_last_name} onChange={set('paternal_last_name')} className={inputClass('paternal_last_name')} />
-                {fieldErrors.paternal_last_name && <p className="text-xs text-rose-400 mt-1">{fieldErrors.paternal_last_name}</p>}
+                {fieldErrors.paternal_last_name && <p id="paternal_last_name-error" className="text-xs text-rose-400 mt-1">{fieldErrors.paternal_last_name}</p>}
               </div>
               <div>
-                <label className="text-xs font-semibold text-gray-400 block mb-1.5">Apellido materno</label>
-                <input type="text" autoComplete="additional-name" placeholder="Ej: Gómez"
+                <label htmlFor="maternal_last_name" className="text-xs font-semibold text-gray-400 block mb-1.5">Apellido materno</label>
+                <input id="maternal_last_name" name="maternal_last_name" type="text" autoComplete="additional-name" maxLength={MAX_NAME_LENGTH} required aria-invalid={Boolean(fieldErrors.maternal_last_name)} aria-describedby={fieldErrors.maternal_last_name ? 'maternal_last_name-error' : undefined} placeholder="Ej: Gómez"
                   value={form.maternal_last_name} onChange={set('maternal_last_name')} className={inputClass('maternal_last_name')} />
-                {fieldErrors.maternal_last_name && <p className="text-xs text-rose-400 mt-1">{fieldErrors.maternal_last_name}</p>}
+                {fieldErrors.maternal_last_name && <p id="maternal_last_name-error" className="text-xs text-rose-400 mt-1">{fieldErrors.maternal_last_name}</p>}
               </div>
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-gray-400 block mb-1.5">Email</label>
-              <input type="email" autoComplete="email" placeholder="tucorreo@ejemplo.com"
+              <label htmlFor="email" className="text-xs font-semibold text-gray-400 block mb-1.5">Email</label>
+              <input id="email" name="email" type="email" autoComplete="email" maxLength={254} required aria-invalid={Boolean(fieldErrors.email)} aria-describedby={fieldErrors.email ? 'email-error' : undefined} placeholder="tucorreo@ejemplo.com"
                 value={form.email} onChange={set('email')} className={inputClass('email')} />
-              {fieldErrors.email && <p className="text-xs text-rose-400 mt-1">{fieldErrors.email}</p>}
+              {fieldErrors.email && <p id="email-error" className="text-xs text-rose-400 mt-1">{fieldErrors.email}</p>}
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-gray-400 block mb-1.5">Contraseña</label>
+              <label htmlFor="password" className="text-xs font-semibold text-gray-400 block mb-1.5">Contraseña</label>
               <div className="relative">
-                <input type={showPassword ? 'text' : 'password'} autoComplete="new-password"
+                <input id="password" name="password" type={showPassword ? 'text' : 'password'} autoComplete="new-password" maxLength={128} required aria-invalid={Boolean(fieldErrors.password)} aria-describedby={fieldErrors.password ? 'password-error' : undefined}
                   placeholder="Crea una contraseña segura"
                   value={form.password} onChange={set('password')} className={`${inputClass('password')} pr-11`} />
                 <button type="button" onClick={() => setShowPassword(v => !v)}
@@ -189,44 +218,44 @@ export default function Register() {
                   </div>
                 </div>
               )}
-              {fieldErrors.password && <p className="text-xs text-rose-400 mt-1">{fieldErrors.password}</p>}
+              {fieldErrors.password && <p id="password-error" className="text-xs text-rose-400 mt-1">{fieldErrors.password}</p>}
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-gray-400 block mb-1.5">Confirmar contraseña</label>
-              <input type={showPassword ? 'text' : 'password'} autoComplete="new-password"
+              <label htmlFor="confirm" className="text-xs font-semibold text-gray-400 block mb-1.5">Confirmar contraseña</label>
+              <input id="confirm" name="confirm" type={showPassword ? 'text' : 'password'} autoComplete="new-password" maxLength={128} required aria-invalid={Boolean(fieldErrors.confirm)} aria-describedby={fieldErrors.confirm ? 'confirm-error' : undefined}
                 placeholder="Repite tu contraseña"
                 value={form.confirm} onChange={set('confirm')} className={inputClass('confirm')} />
-              {fieldErrors.confirm && <p className="text-xs text-rose-400 mt-1">{fieldErrors.confirm}</p>}
+              {fieldErrors.confirm && <p id="confirm-error" className="text-xs text-rose-400 mt-1">{fieldErrors.confirm}</p>}
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-gray-400 block mb-1.5">Teléfono</label>
-              <input type="tel" autoComplete="tel" placeholder="+591 71234567"
+              <label htmlFor="phone" className="text-xs font-semibold text-gray-400 block mb-1.5">Teléfono</label>
+              <input id="phone" name="phone" type="tel" autoComplete="tel" maxLength={16} required aria-invalid={Boolean(fieldErrors.phone)} aria-describedby={fieldErrors.phone ? 'phone-error' : undefined} placeholder="+591 71234567"
                 value={form.phone} onChange={set('phone')} className={inputClass('phone')} />
-              {fieldErrors.phone && <p className="text-xs text-rose-400 mt-1">{fieldErrors.phone}</p>}
+              {fieldErrors.phone && <p id="phone-error" className="text-xs text-rose-400 mt-1">{fieldErrors.phone}</p>}
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
               <div>
-                <label className="text-xs font-semibold text-gray-400 block mb-1.5">Edad</label>
-                <input type="number" min="18" max="110" placeholder="Ej: 25"
+                <label htmlFor="age" className="text-xs font-semibold text-gray-400 block mb-1.5">Edad</label>
+                <input id="age" name="age" type="number" min="18" max="110" step="1" required aria-invalid={Boolean(fieldErrors.age)} aria-describedby={fieldErrors.age ? 'age-error' : undefined} placeholder="Ej: 25"
                   value={form.age} onChange={set('age')} className={inputClass('age')} />
-                {fieldErrors.age && <p className="text-xs text-rose-400 mt-1">{fieldErrors.age}</p>}
+                {fieldErrors.age && <p id="age-error" className="text-xs text-rose-400 mt-1">{fieldErrors.age}</p>}
               </div>
               <div>
-                <label className="text-xs font-semibold text-gray-400 block mb-1.5">Carnet (C.I.)</label>
-                <input type="text" inputMode="numeric" placeholder="12345678"
+                <label htmlFor="ci" className="text-xs font-semibold text-gray-400 block mb-1.5">Carnet (C.I.)</label>
+                <input id="ci" name="ci" type="text" inputMode="numeric" maxLength={10} required aria-invalid={Boolean(fieldErrors.ci)} aria-describedby={fieldErrors.ci ? 'ci-error' : undefined} placeholder="12345678"
                   value={form.ci} onChange={set('ci')} className={inputClass('ci')} />
-                {fieldErrors.ci && <p className="text-xs text-rose-400 mt-1">{fieldErrors.ci}</p>}
+                {fieldErrors.ci && <p id="ci-error" className="text-xs text-rose-400 mt-1">{fieldErrors.ci}</p>}
               </div>
               <div>
-                <label className="text-xs font-semibold text-gray-400 block mb-1.5">Extensión</label>
-                <select value={form.ci_extension} onChange={set('ci_extension')} className={inputClass('ci_extension')}>
+                <label htmlFor="ci_extension" className="text-xs font-semibold text-gray-400 block mb-1.5">Extensión</label>
+                <select id="ci_extension" name="ci_extension" value={form.ci_extension} onChange={set('ci_extension')} className={inputClass('ci_extension')} required aria-invalid={Boolean(fieldErrors.ci_extension)} aria-describedby={fieldErrors.ci_extension ? 'ci_extension-error' : undefined}>
                   <option value="">Ext.</option>
                   {CI_EXTENSIONS.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
-                {fieldErrors.ci_extension && <p className="text-xs text-rose-400 mt-1">{fieldErrors.ci_extension}</p>}
+                {fieldErrors.ci_extension && <p id="ci_extension-error" className="text-xs text-rose-400 mt-1">{fieldErrors.ci_extension}</p>}
               </div>
             </div>
 

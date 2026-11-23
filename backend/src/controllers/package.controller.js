@@ -24,16 +24,21 @@ const getPackages = async (req, res) => {
 const createPackage = async (req, res) => {
     try {
         const { name, description, price, items, active, tenant_id } = req.body;
-        if (!name || price === undefined || price === null) {
-            return res.status(400).json({ success: false, message: 'Nombre y precio son requeridos.' });
+        const cleanName = typeof name === 'string' ? name.trim() : '';
+        const cleanDescription = typeof description === 'string' ? description.trim() : '';
+        const value = Number(price);
+        if (!cleanName || cleanName.length > 150 || price === undefined || price === null ||
+            !Number.isFinite(value) || value < 0 || cleanDescription.length > 500 ||
+            (items !== undefined && !Array.isArray(items))) {
+            return res.status(400).json({ success: false, message: 'Nombre, precio o items del paquete no son válidos.' });
         }
         const tid = req.user.role === 'superadmin' ? (tenant_id || req.user.tenant_id) : req.user.tenant_id;
         if (!tid) return res.status(400).json({ success: false, message: 'tenant_id es requerido.' });
 
         const payload = {
             tenant_id: tid,
-            name: String(name).trim(),
-            description: description || null,
+            name: cleanName,
+            description: cleanDescription || null,
             price: Number(price),
             items: Array.isArray(items) ? items : [],
             active: active !== false
