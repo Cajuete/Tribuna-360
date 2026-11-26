@@ -1,0 +1,409 @@
+{
+  "info": {
+    "_postman_id": "d35a3ee8-2dc3-4ad9-bc45-9f4bca7f7c32",
+    "name": "Tribuna 360 - Pruebas funcionales API",
+    "description": "Pruebas funcionales de autenticación, productos, tenants, partidos, usuarios, membresías, pedidos, pagos, solicitudes de clubes y catálogos. Configura las variables email, password y tenantId antes de ejecutar. La colección crea un producto temporal y lo elimina al final.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "01 - Login válido",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Login responde 200', function () { pm.response.to.have.status(200); });",
+              "const json = pm.response.json();",
+              "pm.test('La respuesta contiene token', function () { pm.expect(json.data).to.have.property('token'); });",
+              "if (json.data && json.data.token) { pm.collectionVariables.set('token', json.data.token); }"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": "{{baseUrl}}/api/v1/auth/login"
+      }
+    },
+    {
+      "name": "02 - Login inválido",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Credenciales incorrectas responden 401', function () { pm.response.to.have.status(401); });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"usuario-inexistente@example.com\",\n  \"password\": \"ClaveIncorrecta123\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": "{{baseUrl}}/api/v1/auth/login"
+      }
+    },
+    {
+      "name": "03 - Perfil autenticado",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Perfil autenticado responde 200', function () { pm.response.to.have.status(200); });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/auth/me"
+      }
+    },
+    {
+      "name": "04 - Perfil sin token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Sin token responde 401', function () { pm.response.to.have.status(401); });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/auth/me"
+      }
+    },
+    {
+      "name": "05 - Crear producto de prueba (stock 12)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Producto creado: HTTP 201', function () { pm.response.to.have.status(201); });",
+              "const json = pm.response.json();",
+              "pm.test('El producto tiene stock 12', function () { pm.expect(json.product.stock).to.eql(12); });",
+              "if (json.product && json.product.id) { pm.collectionVariables.set('productId', json.product.id); }"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Tribuna360 API Test {{$timestamp}}\",\n  \"description\": \"Producto temporal creado por la colección de pruebas\",\n  \"price\": 1,\n  \"stock\": 12,\n  \"tenant_id\": \"{{tenantId}}\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": "{{baseUrl}}/api/v1/productos"
+      }
+    },
+    {
+      "name": "06 - Rechazar stock negativo",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Stock negativo responde 400', function () { pm.response.to.have.status(400); });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Producto inválido negativo\",\n  \"price\": 1,\n  \"stock\": -2,\n  \"tenant_id\": \"{{tenantId}}\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": "{{baseUrl}}/api/v1/productos"
+      }
+    },
+    {
+      "name": "07 - Rechazar stock decimal",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Stock decimal responde 400', function () { pm.response.to.have.status(400); });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Producto inválido decimal\",\n  \"price\": 1,\n  \"stock\": 2.5,\n  \"tenant_id\": \"{{tenantId}}\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": "{{baseUrl}}/api/v1/productos"
+      }
+    },
+    {
+      "name": "08 - Actualizar stock a cero",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Actualización responde 200', function () { pm.response.to.have.status(200); });",
+              "const json = pm.response.json();",
+              "pm.test('Stock actualizado a cero', function () { pm.expect(json.product.stock).to.eql(0); });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"stock\": 0\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": "{{baseUrl}}/api/v1/productos/{{productId}}"
+      }
+    },
+    {
+      "name": "09 - Consultar producto creado",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Consulta por ID responde 200', function () { pm.response.to.have.status(200); });",
+              "const json = pm.response.json();",
+              "pm.test('El producto contiene stock', function () { pm.expect(json.data).to.have.property('stock'); });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/productos/{{productId}}"
+      }
+    },
+    {
+      "name": "10 - Listar clubes (tenants)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": ["pm.test('Tenants responde 200', function () { pm.response.to.have.status(200); });"]
+          }
+        }
+      ],
+      "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/v1/tenants" }
+    },
+    {
+      "name": "11 - Listar partidos",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": ["pm.test('Partidos responde 200', function () { pm.response.to.have.status(200); });"]
+          }
+        }
+      ],
+      "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/v1/matches" }
+    },
+    {
+      "name": "12 - Listar usuarios",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": ["pm.test('Usuarios responde 200', function () { pm.response.to.have.status(200); });"]
+          }
+        }
+      ],
+      "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/v1/users" }
+    },
+    {
+      "name": "13 - Listar membresías",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": ["pm.test('Membresías responde 200', function () { pm.response.to.have.status(200); });"]
+          }
+        }
+      ],
+      "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/v1/memberships" }
+    },
+    {
+      "name": "14 - Listar pedidos",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": ["pm.test('Pedidos responde 200', function () { pm.response.to.have.status(200); });"]
+          }
+        }
+      ],
+      "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/v1/orders" }
+    },
+    {
+      "name": "15 - Listar pagos",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": ["pm.test('Pagos responde 200', function () { pm.response.to.have.status(200); });"]
+          }
+        }
+      ],
+      "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/v1/payments" }
+    },
+    {
+      "name": "16 - Solicitudes de clubes (requiere superadmin)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": ["pm.test('El usuario sin rol superadmin recibe 403', function () { pm.response.to.have.status(403); });"]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/club-requests"
+      }
+    },
+    {
+      "name": "17 - Listar promociones",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": ["pm.test('Promociones responde 200', function () { pm.response.to.have.status(200); });"]
+          }
+        }
+      ],
+      "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/v1/promotions" }
+    },
+    {
+      "name": "18 - Listar paquetes",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": ["pm.test('Paquetes responde 200', function () { pm.response.to.have.status(200); });"]
+          }
+        }
+      ],
+      "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/v1/packages" }
+    },
+    {
+      "name": "19 - Listar patrocinadores",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": ["pm.test('Patrocinadores responde 200', function () { pm.response.to.have.status(200); });"]
+          }
+        }
+      ],
+      "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/v1/sponsors" }
+    },
+    {
+      "name": "20 - Listar asociaciones",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": ["pm.test('Asociaciones responde 200', function () { pm.response.to.have.status(200); });"]
+          }
+        }
+      ],
+      "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/v1/associations" }
+    },
+    {
+      "name": "21 - Limpiar producto temporal",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Limpieza del producto temporal responde 200', function () { pm.response.to.have.status(200); });",
+              "pm.collectionVariables.unset('productId');"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/productos/{{productId}}"
+      }
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000", "type": "string" },
+    { "key": "email", "value": "", "type": "string" },
+    { "key": "password", "value": "", "type": "string" },
+    { "key": "tenantId", "value": "", "type": "string" },
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "productId", "value": "", "type": "string" }
+  ]
+}

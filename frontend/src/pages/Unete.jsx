@@ -1,5 +1,8 @@
+import AlertBanner from '../components/AlertBanner';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
+import { useAuth } from '../context/auth-context';
 import { associationService } from '../api/association.service';
 import { clubRequestService } from '../api/clubRequest.service';
 import { uploadService } from '../api/upload.service';
@@ -10,6 +13,7 @@ const MAX_NAME_LENGTH = 150;
 const PERSON_NAME_RE = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]*$/;
 
 export default function Unete() {
+  const { token } = useAuth();
   const [step, setStep] = useState(1);
   const [associations, setAssociations] = useState([]);
   const [club, setClub] = useState({
@@ -38,13 +42,14 @@ export default function Unete() {
   const [fieldErrors, setFieldErrors] = useState({});
 
   useEffect(() => {
+    if (token) return undefined;
     associationService
       .getAll()
       .then(res => {
         if (res.status === 'success') setAssociations(res.data);
       })
       .catch(() => setAssociationError('No se pudieron cargar las asociaciones. Recarga la página para intentarlo nuevamente.'));
-  }, []);
+  }, [token]);
 
   const handleAssociation = id => {
     const a = associations.find(x => x.id === id);
@@ -191,11 +196,37 @@ export default function Unete() {
     }
   };
 
+  if (token) {
+    return (
+      <div className="max-w-2xl mx-auto px-6 py-16">
+        <div className="card p-8 text-center">
+          <Link to="/" className="btn btn-outline inline-flex items-center gap-2 px-3 py-2 text-sm mb-5">
+            <ArrowLeft className="w-4 h-4" />
+            Volver al inicio
+          </Link>
+          <span className="eyebrow">Solicitud para clubes</span>
+          <h1 className="section-title text-3xl mt-2">Ya tienes una cuenta activa</h1>
+          <p className="text-sm text-gray-300 mt-3">
+            Este formulario es para representantes que desean incorporar un club nuevo a Tribuna 360.
+            Si quieres hacerte socio como hincha, consulta los planes de los clubes.
+          </p>
+          <Link to="/socios" className="btn btn-primary mt-6 px-5 py-2.5">
+            Ver planes de membresía
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-2xl mx-auto px-6 py-16">
       <div className="card p-8">
+        <Link to="/" className="btn btn-outline inline-flex items-center gap-2 px-3 py-2 text-sm mb-5">
+          <ArrowLeft className="w-4 h-4" />
+          Volver al inicio
+        </Link>
         <span className="eyebrow block text-center">Solicitud de incorporación</span>
-        <h2 className="section-title text-3xl mt-2 text-center">Únete a Tribuna 360</h2>
+        <h2 className="section-title text-3xl mt-2 text-center">Solicita incorporar un club</h2>
         <p className="text-sm text-gray-400 text-center mt-2">
           Envía los datos de tu club para que el equipo de Tribuna 360 los revise.
         </p>
@@ -232,14 +263,14 @@ export default function Unete() {
                     Copiar código
                   </button>
                 </div>
-                {copyMessage && <p className="text-xs text-gray-400 mt-2">{copyMessage}</p>}
+                <AlertBanner message={copyMessage} type="info" onClose={() => setCopyMessage(null)} className="text-xs text-gray-400 mt-2" />
               </div>
             )}
           </div>
         ) : (
           <>
-            {error && <p className="mb-4 alert-error">{error}</p>}
-            {associationError && <p className="mb-4 alert-error">{associationError}</p>}
+            <AlertBanner message={error} type="error" onClose={() => setError(null)} className="mb-4" />
+            <AlertBanner message={associationError} type="error" onClose={() => setAssociationError(null)} className="mb-4" />
             {step === 1 && (
               <form onSubmit={goStep2} className="space-y-4" noValidate>
             <input
@@ -463,7 +494,7 @@ export default function Unete() {
               {statusLoading ? 'Consultando...' : 'Consultar'}
             </button>
           </form>
-          {statusError && <p className="alert-error mt-3">{statusError}</p>}
+          <AlertBanner message={statusError} type="error" onClose={() => setStatusError(null)} className="mt-3" />
           {requestStatus && (
             <div className="rounded-xl border border-gray-700 bg-gray-800 p-4 mt-3">
               <p className="font-semibold">

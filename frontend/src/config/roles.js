@@ -8,6 +8,7 @@ export const ROLE_LABELS = {
   customer_support: 'Soporte',
   gate_operator: 'Operador de puerta',
   payment_manager: 'Encargado de pagos',
+  delivery_manager: 'Despachador',
   fan: 'Hincha',
 };
 
@@ -19,6 +20,7 @@ export const STAFF_ROLES = [
   'customer_support',
   'gate_operator',
   'payment_manager',
+  'delivery_manager',
 ];
 
 export const VALID_ROLES = [
@@ -31,6 +33,7 @@ export const VALID_ROLES = [
   'customer_support',
   'gate_operator',
   'payment_manager',
+  'delivery_manager',
   'fan',
 ];
 
@@ -48,7 +51,7 @@ export const ROLE_NAV_LINKS = {
     { to: '/scanner', label: 'Validador QR' },
   ],
   sales_manager: [
-    { to: '/ventas', label: 'Promociones' },
+    { to: '/ventas', label: 'Campañas' },
     { to: '/admin', label: 'Panel', tab: 'resumen' },
     { to: '/admin?tab=tienda', label: 'Tienda', tab: 'tienda' },
     { to: '/admin?tab=pedidos', label: 'Pedidos', tab: 'pedidos' },
@@ -76,6 +79,7 @@ export const ROLE_NAV_LINKS = {
   ],
   club_admin: [
     { to: '/admin', label: 'Panel', tab: 'resumen' },
+    { to: '/ventas', label: 'Campañas' },
     { to: '/admin?tab=partidos', label: 'Partidos', tab: 'partidos' },
     { to: '/admin?tab=tienda', label: 'Tienda', tab: 'tienda' },
     { to: '/admin?tab=socios', label: 'Socios', tab: 'socios' },
@@ -86,8 +90,12 @@ export const ROLE_NAV_LINKS = {
     { to: '/admin', label: 'Panel', tab: 'resumen' },
     { to: '/admin?tab=pagos', label: 'Pagos', tab: 'pagos' },
   ],
+  delivery_manager: [
+    { to: '/admin?tab=pedidos', label: 'Despachos', tab: 'pedidos' },
+  ],
   superadmin: [
     { to: '/admin', label: 'Panel', tab: 'resumen' },
+    { to: '/ventas', label: 'Campañas' },
     { to: '/admin?tab=partidos', label: 'Partidos', tab: 'partidos' },
     { to: '/admin?tab=tienda', label: 'Tienda', tab: 'tienda' },
     { to: '/admin?tab=clubes', label: 'Clubes', tab: 'clubes' },
@@ -100,7 +108,7 @@ export const GUEST_NAV_LINKS = [
   { to: '/', label: 'Partidos', end: true },
   { to: '/tienda', label: 'Tienda' },
   { to: '/socios', label: 'Socios' },
-  { to: '/unete', label: 'Únete' },
+  { to: '/unete', label: 'Registrar mi club' },
 ];
 
 export const ADMIN_TABS_BY_ROLE = {
@@ -112,6 +120,7 @@ export const ADMIN_TABS_BY_ROLE = {
   customer_support: ['resumen', 'pedidos', 'socios'],
   box_office_cashier: ['resumen', 'partidos'],
   payment_manager: ['resumen', 'pagos'],
+  delivery_manager: ['pedidos'],
 };
 
 export const TAB_LABELS = {
@@ -145,5 +154,6 @@ export const ROUTE_ROLES = {
     'customer_support',
     'box_office_cashier',
     'payment_manager',
+    'delivery_manager',
   ],
 };

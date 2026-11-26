@@ -1,6 +1,7 @@
+import AlertBanner from '../components/AlertBanner';
 import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Eye, EyeOff, Lock, Mail, CircleAlert, Loader2, Check } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, Lock, Mail, Loader2, Check } from 'lucide-react';
 import { authService } from '../api/auth.service';
 import { useAuth } from '../context/auth-context';
 import Logo from '../components/Logo';
@@ -59,12 +60,19 @@ export default function Login() {
 
   return (
     <div className="relative overflow-hidden">
-      <img src="images/hero.png" alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-cover" />
+      <img src="images/hero.png" alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-contain" />
       <div className="absolute inset-0 bg-gradient-to-b from-gray-950/95 via-gray-950/80 to-gray-950/95" />
       <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[280px] h-[280px] sm:w-[600px] sm:h-[600px] rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
 
       <div className="relative max-w-md mx-auto px-6 py-14">
         <div className="card p-8 border border-white/10">
+          <Link
+            to="/"
+            className="btn btn-outline inline-flex items-center gap-2 px-3 py-2 text-sm mb-5"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Volver al inicio
+          </Link>
           <div className="flex justify-center mb-5">
             <Logo />
           </div>
@@ -138,12 +146,7 @@ export default function Login() {
             </div>
           )}
 
-          {error && (
-            <div className="alert-error mt-4 flex items-start gap-2">
-              <CircleAlert className="w-4 h-4 mt-0.5 shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
+          <AlertBanner message={error} type="error" onClose={() => setError(null)} className="mt-4" />
 
           <p className="mt-6 text-center text-sm text-gray-400">
             ¿No tienes cuenta?{' '}
@@ -152,9 +155,9 @@ export default function Login() {
             </Link>
           </p>
           <p className="mt-2 text-center text-sm text-gray-500">
-            ¿Eres club?{' '}
+            ¿Representas a un club?{' '}
             <Link to="/unete" className="text-lime-400 hover:text-lime-300 font-semibold">
-              Únete a Tribuna 360
+              Solicita su incorporación
             </Link>
           </p>
         </div>

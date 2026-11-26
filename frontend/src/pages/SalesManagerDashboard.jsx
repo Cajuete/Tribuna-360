@@ -2,11 +2,28 @@ import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/auth-context';
 import { promotionService } from '../api/promotion.service';
 import { packageService } from '../api/package.service';
+import { productService } from '../api/product.service';
 import { sponsorService } from '../api/sponsor.service';
+import { uploadService } from '../api/upload.service';
+import CampaignManager from '../components/CampaignManager';
 
 const inputCls = 'w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-white';
 const labelCls = 'text-xs text-gray-400 block mb-1';
-const HTTP_URL_RE = /^https?:\/\/[^\s]+$/i;
+
+function getPromotionStatus(promotion) {
+  const now = Date.now();
+  if (!promotion.is_active) return { label: 'Pausada', className: 'bg-gray-700 text-gray-300' };
+  if (promotion.max_uses !== null && Number(promotion.used_count) >= Number(promotion.max_uses)) {
+    return { label: 'Agotada', className: 'bg-rose-900 text-rose-300' };
+  }
+  if (promotion.starts_at && Date.parse(promotion.starts_at) > now) {
+    return { label: 'Programada', className: 'bg-sky-900 text-sky-300' };
+  }
+  if (promotion.ends_at && Date.parse(promotion.ends_at) <= now) {
+    return { label: 'Vencida', className: 'bg-gray-700 text-gray-300' };
+  }
+  return { label: 'Vigente', className: 'bg-emerald-900 text-emerald-300' };
+}
 
 function Notice({ msg }) {
   if (!msg) return null;
@@ -19,22 +36,24 @@ function Notice({ msg }) {
 
 export default function SalesManagerDashboard() {
   const { user } = useAuth();
-  const [tab, setTab] = useState('promociones');
+  const [tab, setTab] = useState('campañas');
   const [promotions, setPromotions] = useState([]);
   const [promoMsg, setPromoMsg] = useState(null);
   const [promoForm, setPromoForm] = useState({
     code: '', description: '', discount_type: 'percentage', discount_value: '', applies_to: 'both',
-    zone_name: '', max_uses: '', starts_at: '', ends_at: '', is_active: true
+    audience: 'all', zone_name: '', max_uses: '', starts_at: '', ends_at: '', is_active: true
   });
   const [editingPromoId, setEditingPromoId] = useState(null);
   const [packages, setPackages] = useState([]);
+  const [packageProducts, setPackageProducts] = useState([]);
   const [packageMsg, setPackageMsg] = useState(null);
-  const [packageForm, setPackageForm] = useState({ name: '', description: '', price: '', items: '[]', active: true });
+  const [packageForm, setPackageForm] = useState({ name: '', description: '', price: '', items: [], active: true });
   const [editingPackageId, setEditingPackageId] = useState(null);
   const [sponsors, setSponsors] = useState([]);
   const [sponsorMsg, setSponsorMsg] = useState(null);
   const [sponsorForm, setSponsorForm] = useState({ name: '', logo_url: '', link: '', position: 'home', active: true });
   const [editingSponsorId, setEditingSponsorId] = useState(null);
+  const [uploadingSponsorLogo, setUploadingSponsorLogo] = useState(false);
   const [metrics, setMetrics] = useState(null);
   const [metricsMsg, setMetricsMsg] = useState(null);
   const [tenantId, setTenantId] = useState(user?.tenant_id || '');
@@ -56,6 +75,17 @@ export default function SalesManagerDashboard() {
       .catch(err => setPackageMsg({ ok: false, text: err.message }));
   }, [isSuperadmin, tenantId]);
 
+  const loadPackageProducts = useCallback(() => {
+    if (isSuperadmin && !tenantId) {
+      setPackageProducts([]);
+      return;
+    }
+    const qs = isSuperadmin ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+    productService.getAll(qs)
+      .then(res => { if (res.success) setPackageProducts(res.data || []); })
+      .catch(err => setPackageMsg({ ok: false, text: err.message }));
+  }, [isSuperadmin, tenantId]);
+
   const loadSponsors = useCallback(() => {
     const qs = isSuperadmin && tenantId ? `?tenant_id=${tenantId}` : '';
     sponsorService.getAll(qs)
@@ -73,9 +103,10 @@ export default function SalesManagerDashboard() {
   useEffect(() => {
     loadPromotions();
     loadPackages();
+    loadPackageProducts();
     loadSponsors();
     loadMetrics();
-  }, [loadMetrics, loadPackages, loadPromotions, loadSponsors]);
+  }, [loadMetrics, loadPackages, loadPackageProducts, loadPromotions, loadSponsors]);
 
   const handlePromoSubmit = async (e) => {
     e.preventDefault();
@@ -84,11 +115,11 @@ export default function SalesManagerDashboard() {
     const errors = {};
     if (!promoForm.code.trim()) errors.promo_code = 'Escribe un código.';
     else if (promoForm.code.trim().length > 50) errors.promo_code = 'Usa hasta 50 caracteres.';
-    if (!Number.isFinite(value) || value < 0 ||
-      (promoForm.discount_type === 'percentage' && value > 100)) {
+    if (!Number.isFinite(value) || value <= 0 ||
+      (promoForm.discount_type === 'percentage' && value >= 100)) {
       errors.promo_value = promoForm.discount_type === 'percentage'
-        ? 'El porcentaje debe estar entre 0 y 100.'
-        : 'El monto debe ser mayor o igual a 0.';
+        ? 'El porcentaje debe ser mayor que 0 y menor que 100.'
+        : 'El monto debe ser mayor que 0.';
     }
     if (promoForm.description.length > 500) errors.promo_description = 'Usa hasta 500 caracteres.';
     if (promoForm.zone_name.length > 100) errors.promo_zone = 'Usa hasta 100 caracteres.';
@@ -113,7 +144,7 @@ export default function SalesManagerDashboard() {
         await promotionService.create(payload);
         setPromoMsg({ ok: true, text: 'Promoción creada.' });
       }
-      setPromoForm({ code: '', description: '', discount_type: 'percentage', discount_value: '', applies_to: 'both', zone_name: '', max_uses: '', starts_at: '', ends_at: '', is_active: true });
+      setPromoForm({ code: '', description: '', discount_type: 'percentage', discount_value: '', applies_to: 'both', audience: 'all', zone_name: '', max_uses: '', starts_at: '', ends_at: '', is_active: true });
       setEditingPromoId(null);
       loadPromotions();
     } catch (err) {
@@ -129,6 +160,7 @@ export default function SalesManagerDashboard() {
       discount_type: p.discount_type || 'percentage',
       discount_value: p.discount_value ?? '',
       applies_to: p.applies_to || 'both',
+      audience: p.audience || 'all',
       zone_name: p.zone_name || '',
       max_uses: p.max_uses ?? '',
       starts_at: p.starts_at ? p.starts_at.slice(0, 16) : '',
@@ -155,12 +187,19 @@ export default function SalesManagerDashboard() {
     else if (packageForm.name.trim().length > 150) errors.package_name = 'Usa hasta 150 caracteres.';
     if (!Number.isFinite(price) || price < 0) errors.package_price = 'El precio debe ser mayor o igual a 0.';
     if (packageForm.description.length > 500) errors.package_description = 'Usa hasta 500 caracteres.';
-    let items = [];
-    try {
-      items = JSON.parse(packageForm.items || '[]');
-      if (!Array.isArray(items)) throw new Error('Los items deben ser una lista.');
-    } catch {
-      errors.package_items = 'Los items deben tener formato JSON de lista.';
+    const items = packageForm.items.map(item => {
+      const product = packageProducts.find(candidate => candidate.id === item.product_id);
+      return {
+        product_id: item.product_id,
+        name: product?.name || '',
+        quantity: Number(item.quantity),
+      };
+    });
+    if (items.some(item => !item.product_id || !item.name || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 99)) {
+      errors.package_items = 'Selecciona un producto y una cantidad entre 1 y 99 para cada artículo.';
+    }
+    if (new Set(items.map(item => item.product_id)).size !== items.length) {
+      errors.package_items = 'Cada producto solo puede aparecer una vez en el paquete.';
     }
     setFormErrors(errors);
     if (Object.keys(errors).length) {
@@ -176,7 +215,7 @@ export default function SalesManagerDashboard() {
         await packageService.create(payload);
         setPackageMsg({ ok: true, text: 'Paquete creado.' });
       }
-      setPackageForm({ name: '', description: '', price: '', items: '[]', active: true });
+      setPackageForm({ name: '', description: '', price: '', items: [], active: true });
       setEditingPackageId(null);
       loadPackages();
     } catch (err) {
@@ -190,9 +229,35 @@ export default function SalesManagerDashboard() {
       name: p.name || '',
       description: p.description || '',
       price: p.price ?? '',
-      items: JSON.stringify(p.items || [], null, 2),
+      items: Array.isArray(p.items) ? p.items.map(item => {
+        if (typeof item === 'string') return { name: item, quantity: '1' };
+        if (item && typeof item === 'object' && !Array.isArray(item)) {
+          return {
+            product_id: String(item.product_id || ''),
+            name: String(item.name || item.label || item.description || ''),
+            quantity: String(item.quantity ?? 1),
+          };
+        }
+        return { product_id: '', name: String(item ?? ''), quantity: '1' };
+      }) : [],
       active: p.active !== false
     });
+  };
+
+  const updatePackageItem = (index, key, value) => {
+    setPackageForm(current => ({
+      ...current,
+      items: current.items.map((item, itemIndex) => (
+        itemIndex === index ? { ...item, [key]: value } : item
+      )),
+    }));
+  };
+
+  const addPackageItem = () => {
+    setPackageForm(current => ({
+      ...current,
+      items: [...current.items, { product_id: '', name: '', quantity: '1' }],
+    }));
   };
 
   const handlePackageDelete = async (id) => {
@@ -208,13 +273,15 @@ export default function SalesManagerDashboard() {
 
   const handleSponsorSubmit = async (e) => {
     e.preventDefault();
+    if (uploadingSponsorLogo) {
+      setSponsorMsg({ ok: false, text: 'Espera a que termine de subirse el logo.' });
+      return;
+    }
     const errors = {};
     if (!sponsorForm.name.trim()) errors.sponsor_name = 'Escribe el nombre del patrocinador.';
     else if (sponsorForm.name.trim().length > 150) errors.sponsor_name = 'Usa hasta 150 caracteres.';
-    if (sponsorForm.logo_url && !HTTP_URL_RE.test(sponsorForm.logo_url.trim())) {
-      errors.sponsor_logo = 'Usa una URL válida que comience con http:// o https://.';
-    }
-    if (sponsorForm.link && !HTTP_URL_RE.test(sponsorForm.link.trim())) {
+    if (!sponsorForm.logo_url) errors.sponsor_logo = 'Sube el logo del patrocinador.';
+    if (sponsorForm.link && !/^https?:\/\/[^\s]+$/i.test(sponsorForm.link.trim())) {
       errors.sponsor_link = 'Usa una URL válida que comience con http:// o https://.';
     }
     setFormErrors(errors);
@@ -236,6 +303,28 @@ export default function SalesManagerDashboard() {
       loadSponsors();
     } catch (err) {
       setSponsorMsg({ ok: false, text: err.message });
+    }
+  };
+
+  const handleSponsorLogoUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 2 * 1024 * 1024) {
+      setSponsorMsg({ ok: false, text: 'El logo debe ser PNG, JPG o WEBP y no superar 2 MB.' });
+      event.target.value = '';
+      return;
+    }
+    setUploadingSponsorLogo(true);
+    setSponsorMsg(null);
+    try {
+      const response = await uploadService.sponsorLogo(file);
+      setSponsorForm(current => ({ ...current, logo_url: response.data.url }));
+      setSponsorMsg({ ok: true, text: 'Logo subido correctamente.' });
+    } catch (err) {
+      setSponsorMsg({ ok: false, text: err.message });
+    } finally {
+      setUploadingSponsorLogo(false);
+      event.target.value = '';
     }
   };
 
@@ -267,14 +356,14 @@ export default function SalesManagerDashboard() {
       <h1 className="text-2xl font-bold mb-6">Panel Gerente de Ventas</h1>
 
       <div className="flex flex-wrap gap-2 mb-6">
-        {['promociones', 'paquetes', 'patrocinadores', 'metricas'].map(t => (
+        {['campañas', 'promociones', 'paquetes', 'patrocinadores', 'metricas'].map(t => (
           <button
             key={t}
             type="button"
             onClick={() => setTab(t)}
             className={`px-4 py-2 rounded-lg text-sm font-semibold ${tab === t ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-300 hover:text-white'}`}
           >
-            {t === 'promociones' ? 'Promociones' : t === 'paquetes' ? 'Paquetes' : t === 'patrocinadores' ? 'Patrocinadores' : 'Métricas de conversión'}
+            {t === 'campañas' ? 'Campañas' : t === 'promociones' ? 'Códigos promocionales' : t === 'paquetes' ? 'Paquetes' : t === 'patrocinadores' ? 'Patrocinadores' : 'Métricas de conversión'}
           </button>
         ))}
       </div>
@@ -286,13 +375,19 @@ export default function SalesManagerDashboard() {
         </div>
       )}
 
+      {tab === 'campañas' && (
+        <CampaignManager tenantId={tenantId} isSuperadmin={isSuperadmin} />
+      )}
       {tab === 'promociones' && (
         <div className="space-y-6">
           <Notice msg={promoMsg} />
+          <p className="text-sm text-gray-400">
+            El hincha ingresa este código al comprar. Las campañas aplican sus descuentos automáticamente. El total debe conservar un monto para pagar por QR.
+          </p>
           <form onSubmit={handlePromoSubmit} noValidate className="bg-gray-800 p-5 rounded-2xl border border-gray-700 grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
             <label>
-              <span className={labelCls}>Código</span>
-              <input id="promo_code" maxLength={50} aria-invalid={Boolean(formErrors.promo_code)} className={`${inputCls} ${formErrors.promo_code ? 'border-rose-500/60' : ''}`} value={promoForm.code} onChange={e => setPromoForm({ ...promoForm, code: e.target.value })} required />
+              <span className={labelCls}>Código para compartir</span>
+              <input id="promo_code" maxLength={50} aria-invalid={Boolean(formErrors.promo_code)} className={`${inputCls} uppercase ${formErrors.promo_code ? 'border-rose-500/60' : ''}`} value={promoForm.code} onChange={e => setPromoForm({ ...promoForm, code: e.target.value.toUpperCase() })} placeholder="Ej. HINCHA10" required />
               {formErrors.promo_code && <span className="text-xs text-rose-400 mt-1 block">{formErrors.promo_code}</span>}
             </label>
             <label>
@@ -304,15 +399,22 @@ export default function SalesManagerDashboard() {
             </label>
             <label>
               <span className={labelCls}>Valor</span>
-              <input id="promo_value" type="number" min="0" max={promoForm.discount_type === 'percentage' ? 100 : undefined} step="0.01" aria-invalid={Boolean(formErrors.promo_value)} className={`${inputCls} ${formErrors.promo_value ? 'border-rose-500/60' : ''}`} value={promoForm.discount_value} onChange={e => setPromoForm({ ...promoForm, discount_value: e.target.value })} required />
+              <input id="promo_value" type="number" min="0" max={promoForm.discount_type === 'percentage' ? 99.99 : undefined} step="0.01" aria-invalid={Boolean(formErrors.promo_value)} className={`${inputCls} ${formErrors.promo_value ? 'border-rose-500/60' : ''}`} value={promoForm.discount_value} onChange={e => setPromoForm({ ...promoForm, discount_value: e.target.value })} required />
               {formErrors.promo_value && <span className="text-xs text-rose-400 mt-1 block">{formErrors.promo_value}</span>}
             </label>
             <label>
               <span className={labelCls}>Aplica a</span>
-              <select className={inputCls} value={promoForm.applies_to} onChange={e => setPromoForm({ ...promoForm, applies_to: e.target.value })}>
-                <option value="both">Ambos</option>
+              <select className={inputCls} value={promoForm.applies_to} onChange={e => setPromoForm({ ...promoForm, applies_to: e.target.value, zone_name: e.target.value === 'products' ? '' : promoForm.zone_name })}>
+                <option value="both">Entradas y tienda</option>
                 <option value="tickets">Entradas</option>
                 <option value="products">Tienda</option>
+              </select>
+            </label>
+            <label>
+              <span className={labelCls}>Quién puede usarlo</span>
+              <select className={inputCls} value={promoForm.audience} onChange={e => setPromoForm({ ...promoForm, audience: e.target.value })}>
+                <option value="all">Cualquier hincha con el código</option>
+                <option value="members">Solo socios con membresía vigente</option>
               </select>
             </label>
             <label className="md:col-span-2">
@@ -321,8 +423,9 @@ export default function SalesManagerDashboard() {
               {formErrors.promo_description && <span className="text-xs text-rose-400 mt-1 block">{formErrors.promo_description}</span>}
             </label>
             <label>
-              <span className={labelCls}>Zona (opcional)</span>
-              <input id="promo_zone" maxLength={100} aria-invalid={Boolean(formErrors.promo_zone)} className={`${inputCls} ${formErrors.promo_zone ? 'border-rose-500/60' : ''}`} value={promoForm.zone_name} onChange={e => setPromoForm({ ...promoForm, zone_name: e.target.value })} placeholder="General" />
+              <span className={labelCls}>Zona de entradas (opcional)</span>
+              <input id="promo_zone" maxLength={100} disabled={promoForm.applies_to === 'products'} aria-invalid={Boolean(formErrors.promo_zone)} className={`${inputCls} ${formErrors.promo_zone ? 'border-rose-500/60' : ''}`} value={promoForm.zone_name} onChange={e => setPromoForm({ ...promoForm, zone_name: e.target.value })} placeholder="General" />
+              <span className="text-xs text-gray-400 mt-1 block">Si indicas una zona, el código solo sirve para entradas de esa zona.</span>
               {formErrors.promo_zone && <span className="text-xs text-rose-400 mt-1 block">{formErrors.promo_zone}</span>}
             </label>
             <label>
@@ -331,11 +434,11 @@ export default function SalesManagerDashboard() {
               {formErrors.promo_max_uses && <span className="text-xs text-rose-400 mt-1 block">{formErrors.promo_max_uses}</span>}
             </label>
             <label>
-              <span className={labelCls}>Inicio</span>
+              <span className={labelCls}>Válido desde</span>
               <input type="datetime-local" className={inputCls} value={promoForm.starts_at} onChange={e => setPromoForm({ ...promoForm, starts_at: e.target.value })} />
             </label>
             <label>
-              <span className={labelCls}>Fin</span>
+              <span className={labelCls}>Válido hasta</span>
               <input type="datetime-local" className={inputCls} value={promoForm.ends_at} onChange={e => setPromoForm({ ...promoForm, ends_at: e.target.value })} />
             </label>
             <label className="flex items-center gap-2">
@@ -346,7 +449,7 @@ export default function SalesManagerDashboard() {
               {editingPromoId ? 'Guardar cambios' : 'Crear promoción'}
             </button>
             {editingPromoId && (
-              <button type="button" onClick={() => { setEditingPromoId(null); setPromoForm({ code: '', description: '', discount_type: 'percentage', discount_value: '', applies_to: 'both', zone_name: '', max_uses: '', starts_at: '', ends_at: '', is_active: true }); }} className="bg-gray-700 hover:bg-gray-600 text-white py-3 rounded-lg">
+              <button type="button" onClick={() => { setEditingPromoId(null); setPromoForm({ code: '', description: '', discount_type: 'percentage', discount_value: '', applies_to: 'both', audience: 'all', zone_name: '', max_uses: '', starts_at: '', ends_at: '', is_active: true }); }} className="bg-gray-700 hover:bg-gray-600 text-white py-3 rounded-lg">
                 Cancelar
               </button>
             )}
@@ -359,16 +462,24 @@ export default function SalesManagerDashboard() {
                 <div className="text-sm">
                   <p className="font-bold">{p.code} <span className="text-gray-400 font-normal">({p.tenants?.name})</span></p>
                   <p className="text-gray-400 text-xs">
-                    {p.discount_type === 'percentage' ? `${p.discount_value}%` : `Bs ${p.discount_value}`} · {p.applies_to}
+                    {p.discount_type === 'percentage' ? `${p.discount_value}%` : `Bs ${p.discount_value}`} · {p.zone_name ? 'Entradas' : p.applies_to === 'both' ? 'Entradas y tienda' : p.applies_to === 'tickets' ? 'Entradas' : 'Tienda'}
+                    {' · '}{p.audience === 'members' ? 'Solo socios vigentes' : 'Todos con el código'}
                     {p.zone_name ? ` · ${p.zone_name}` : ''}
                     {p.max_uses ? ` · usos ${p.used_count || 0}/${p.max_uses}` : ''}
                   </p>
                   {p.description && <p className="text-gray-400 text-xs mt-1">{p.description}</p>}
+                  {(p.starts_at || p.ends_at) && (
+                    <p className="text-gray-500 text-xs mt-1">
+                      Vigencia: {p.starts_at ? new Date(p.starts_at).toLocaleString('es-BO') : 'inmediata'}
+                      {' – '}{p.ends_at ? new Date(p.ends_at).toLocaleString('es-BO') : 'sin fecha de fin'}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className={`text-xs px-3 py-1 rounded-full ${p.is_active ? 'bg-emerald-900 text-emerald-300' : 'bg-gray-700 text-gray-300'}`}>
-                    {p.is_active ? 'Activa' : 'Inactiva'}
-                  </span>
+                  {(() => {
+                    const status = getPromotionStatus(p);
+                    return <span className={`text-xs px-3 py-1 rounded-full ${status.className}`}>{status.label}</span>;
+                  })()}
                   <button type="button" onClick={() => handlePromoEdit(p)} className="bg-sky-800 hover:bg-sky-700 text-white text-xs px-3 py-1.5 rounded-lg">Editar</button>
                   <button type="button" onClick={() => handlePromoDelete(p.id)} className="bg-red-800 hover:bg-red-700 text-white text-xs px-3 py-1.5 rounded-lg">Eliminar</button>
                 </div>
@@ -402,16 +513,63 @@ export default function SalesManagerDashboard() {
               <span className={labelCls}>Descripcion</span>
               <input className={inputCls} value={packageForm.description} onChange={e => setPackageForm({ ...packageForm, description: e.target.value })} />
             </label>
-            <label className="md:col-span-3">
-              <span className={labelCls}>Items (JSON)</span>
-              <textarea id="package_items" rows={4} aria-invalid={Boolean(formErrors.package_items)} className={`${inputCls} ${formErrors.package_items ? 'border-rose-500/60' : ''}`} value={packageForm.items} onChange={e => setPackageForm({ ...packageForm, items: e.target.value })} />
-              {formErrors.package_items && <span className="text-xs text-rose-400 mt-1 block">{formErrors.package_items}</span>}
-            </label>
+            <fieldset className="md:col-span-3 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <legend className={labelCls}>Productos incluidos en este paquete</legend>
+                <button type="button" onClick={addPackageItem} className="text-sm font-semibold text-emerald-300 hover:text-emerald-200">
+                  + Agregar artículo
+                </button>
+              </div>
+              {packageForm.items.map((item, index) => (
+                <div key={index} className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_140px_auto] gap-3 items-end">
+                  <label>
+                    <span className={labelCls}>Producto</span>
+                    <select
+                      className={`${inputCls} ${formErrors.package_items ? 'border-rose-500/60' : ''}`}
+                      value={item.product_id}
+                      onChange={event => updatePackageItem(index, 'product_id', event.target.value)}
+                      required
+                    >
+                      <option value="">Selecciona un producto</option>
+                      {packageProducts.map(product => (
+                        <option key={product.id} value={product.id}>{product.name} · Bs {product.price}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span className={labelCls}>Cantidad</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="99"
+                      step="1"
+                      className={`${inputCls} ${formErrors.package_items ? 'border-rose-500/60' : ''}`}
+                      value={item.quantity}
+                      onChange={event => updatePackageItem(index, 'quantity', event.target.value)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setPackageForm(current => ({
+                      ...current,
+                      items: current.items.filter((_, itemIndex) => itemIndex !== index),
+                    }))}
+                    className="bg-gray-700 hover:bg-red-900 text-white px-4 py-3 rounded-lg"
+                  >
+                    Quitar
+                  </button>
+                </div>
+              ))}
+              {packageForm.items.length === 0 && (
+                <p className="text-sm text-gray-500">Aún no agregaste artículos. Puedes agregar los productos o beneficios incluidos.</p>
+              )}
+              {formErrors.package_items && <span className="text-xs text-rose-400 block">{formErrors.package_items}</span>}
+            </fieldset>
             <button type="submit" className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 rounded-lg">
               {editingPackageId ? 'Guardar cambios' : 'Crear paquete'}
             </button>
             {editingPackageId && (
-              <button type="button" onClick={() => { setEditingPackageId(null); setPackageForm({ name: '', description: '', price: '', items: '[]', active: true }); }} className="bg-gray-700 hover:bg-gray-600 text-white py-3 rounded-lg">
+              <button type="button" onClick={() => { setEditingPackageId(null); setPackageForm({ name: '', description: '', price: '', items: [], active: true }); }} className="bg-gray-700 hover:bg-gray-600 text-white py-3 rounded-lg">
                 Cancelar
               </button>
             )}
@@ -423,7 +581,14 @@ export default function SalesManagerDashboard() {
               <div key={p.id} className="bg-gray-800 border border-gray-700 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
                 <div className="text-sm">
                   <p className="font-bold">{p.name} <span className="text-gray-400 font-normal">({p.tenants?.name})</span></p>
-                  <p className="text-gray-400 text-xs">Bs {Number(p.price).toLocaleString('es-BO')} · {Array.isArray(p.items) ? p.items.length : 0} item(s)</p>
+                  <p className="text-gray-400 text-xs">Bs {Number(p.price).toLocaleString('es-BO')} · {Array.isArray(p.items) ? p.items.length : 0} artículos</p>
+                  {Array.isArray(p.items) && p.items.length > 0 && (
+                    <p className="text-gray-400 text-xs mt-1">
+                      Incluye: {p.items.map(item => typeof item === 'string'
+                        ? item
+                            : `${item.name || item.label || 'Artículo'} × ${item.quantity || 1}`).join(', ')}
+                    </p>
+                  )}
                   {p.description && <p className="text-gray-400 text-xs mt-1">{p.description}</p>}
                 </div>
                 <div className="flex items-center gap-2">
@@ -443,44 +608,66 @@ export default function SalesManagerDashboard() {
       {tab === 'patrocinadores' && (
         <div className="space-y-6">
           <Notice msg={sponsorMsg} />
-          <form onSubmit={handleSponsorSubmit} noValidate className="bg-gray-800 p-5 rounded-2xl border border-gray-700 grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-            <label>
+          <form onSubmit={handleSponsorSubmit} noValidate className="bg-gray-800 p-5 rounded-2xl border border-gray-700 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 gap-4">
+            <label className="block min-w-0 xl:col-span-3">
               <span className={labelCls}>Nombre</span>
               <input id="sponsor_name" maxLength={150} aria-invalid={Boolean(formErrors.sponsor_name)} className={`${inputCls} ${formErrors.sponsor_name ? 'border-rose-500/60' : ''}`} value={sponsorForm.name} onChange={e => setSponsorForm({ ...sponsorForm, name: e.target.value })} required />
               {formErrors.sponsor_name && <span className="text-xs text-rose-400 mt-1 block">{formErrors.sponsor_name}</span>}
             </label>
-            <label>
-              <span className={labelCls}>Posicion</span>
+            <label className="block min-w-0 xl:col-span-2">
+              <span className={labelCls}>Posición</span>
               <select className={inputCls} value={sponsorForm.position} onChange={e => setSponsorForm({ ...sponsorForm, position: e.target.value })}>
                 <option value="home">Inicio</option>
                 <option value="tienda">Tienda</option>
-                <option value="checkout">Checkout</option>
+                <option value="checkout">Pago</option>
                 <option value="partidos">Partidos</option>
-                <option value="sidebar">Sidebar</option>
+                <option value="sidebar">Barra lateral</option>
               </select>
             </label>
-            <label>
-              <span className={labelCls}>Logo URL</span>
-              <input id="sponsor_logo" type="url" maxLength={500} aria-invalid={Boolean(formErrors.sponsor_logo)} className={`${inputCls} ${formErrors.sponsor_logo ? 'border-rose-500/60' : ''}`} value={sponsorForm.logo_url} onChange={e => setSponsorForm({ ...sponsorForm, logo_url: e.target.value })} />
+            <label className="block min-w-0 xl:col-span-7">
+              <span className={labelCls}>Logo del patrocinador</span>
+              <input
+                id="sponsor_logo"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={handleSponsorLogoUpload}
+                disabled={uploadingSponsorLogo}
+                className={`${inputCls} min-w-0 text-sm file:mr-2 file:rounded-md file:border-0 file:bg-emerald-700 file:px-2 file:py-1 file:text-white`}
+              />
+              <span className="text-[11px] text-gray-500 mt-1 block">PNG, JPG o WEBP · máximo 2 MB</span>
               {formErrors.sponsor_logo && <span className="text-xs text-rose-400 mt-1 block">{formErrors.sponsor_logo}</span>}
+              {uploadingSponsorLogo && <span className="text-xs text-emerald-300 mt-1 block">Subiendo logo...</span>}
+              {sponsorForm.logo_url && (
+                <div className="flex items-center gap-3 mt-2">
+                  <img src={sponsorForm.logo_url} alt="Vista previa del logo" className="w-12 h-12 object-contain rounded bg-gray-900 p-1" />
+                  <button type="button" onClick={() => setSponsorForm({ ...sponsorForm, logo_url: '' })} className="text-xs text-rose-300 hover:text-rose-200">
+                    Quitar logo
+                  </button>
+                </div>
+              )}
             </label>
-            <label>
-              <span className={labelCls}>Link</span>
-              <input id="sponsor_link" type="url" maxLength={500} aria-invalid={Boolean(formErrors.sponsor_link)} className={`${inputCls} ${formErrors.sponsor_link ? 'border-rose-500/60' : ''}`} value={sponsorForm.link} onChange={e => setSponsorForm({ ...sponsorForm, link: e.target.value })} />
+            <label className="block min-w-0 xl:col-span-7">
+              <span className={labelCls}>Enlace del patrocinador (opcional)</span>
+              <input id="sponsor_link" type="url" maxLength={500} placeholder="https://sitio-del-patrocinador.com" aria-invalid={Boolean(formErrors.sponsor_link)} className={`${inputCls} ${formErrors.sponsor_link ? 'border-rose-500/60' : ''}`} value={sponsorForm.link} onChange={e => setSponsorForm({ ...sponsorForm, link: e.target.value })} />
+              <span className="text-[11px] text-gray-500 mt-1 block">Página que se abrirá al hacer clic en el logo.</span>
               {formErrors.sponsor_link && <span className="text-xs text-rose-400 mt-1 block">{formErrors.sponsor_link}</span>}
             </label>
-            <label className="flex items-center gap-2">
-              <input type="checkbox" checked={sponsorForm.active} onChange={e => setSponsorForm({ ...sponsorForm, active: e.target.checked })} />
-              <span className="text-sm text-gray-300">Activo</span>
-            </label>
-            <button type="submit" className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 rounded-lg">
-              {editingSponsorId ? 'Guardar cambios' : 'Crear patrocinador'}
-            </button>
-            {editingSponsorId && (
-              <button type="button" onClick={() => { setEditingSponsorId(null); setSponsorForm({ name: '', logo_url: '', link: '', position: 'home', active: true }); }} className="bg-gray-700 hover:bg-gray-600 text-white py-3 rounded-lg">
-                Cancelar
-              </button>
-            )}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-700 pt-4 md:col-span-2 xl:col-span-5">
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={sponsorForm.active} onChange={e => setSponsorForm({ ...sponsorForm, active: e.target.checked })} />
+                <span className="text-sm text-gray-300">Activo</span>
+              </label>
+              <div className="flex flex-wrap gap-3">
+                <button type="submit" disabled={uploadingSponsorLogo} className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium px-5 py-3 rounded-lg">
+                  {editingSponsorId ? 'Guardar cambios' : 'Crear patrocinador'}
+                </button>
+                {editingSponsorId && (
+                  <button type="button" onClick={() => { setEditingSponsorId(null); setSponsorForm({ name: '', logo_url: '', link: '', position: 'home', active: true }); }} className="bg-gray-700 hover:bg-gray-600 text-white px-5 py-3 rounded-lg">
+                    Cancelar
+                  </button>
+                )}
+              </div>
+            </div>
           </form>
 
           <div className="space-y-3">

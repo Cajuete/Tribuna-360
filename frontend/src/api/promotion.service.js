@@ -9,6 +9,13 @@ export const promotionService = {
     return await apiRequest(`/promotions/metrics${qs}`, { method: 'GET' });
   },
 
+  async validateCode(payload) {
+    return await apiRequest('/promotions/validate-code', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
   async create(payload) {
     return await apiRequest('/promotions', {
       method: 'POST',

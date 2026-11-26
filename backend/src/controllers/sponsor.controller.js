@@ -1,4 +1,6 @@
 const { supabase } = require('../config/supabase');
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SPONSOR_POSITIONS = ['home', 'tienda', 'checkout', 'partidos', 'sidebar'];
 
 const tenantFilter = (req, query) => {
     if (req.user.role === 'superadmin') {
@@ -22,6 +24,35 @@ const getSponsors = async (req, res) => {
     }
 };
 
+const getPublicSponsors = async (req, res) => {
+    try {
+        const { tenant_id: tenantId, position } = req.query;
+        if (!UUID_RE.test(String(tenantId || ''))) {
+            return res.status(400).json({ success: false, message: 'El club solicitado no es válido.' });
+        }
+        if (position && !SPONSOR_POSITIONS.includes(String(position))) {
+            return res.status(400).json({ success: false, message: 'La ubicación solicitada no es válida.' });
+        }
+
+        let query = supabase.from('sponsors')
+            .select('id, tenant_id, name, logo_url, link, position, tenants(name, slug)')
+            .eq('tenant_id', tenantId)
+            .eq('active', true)
+            .order('created_at', { ascending: true });
+        if (position) query = query.eq('position', position);
+
+        const { data, error } = await query;
+        if (error) throw error;
+        return res.status(200).json({ success: true, data: data || [] });
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: 'No se pudieron cargar los patrocinadores del club.',
+            error: process.env.NODE_ENV === 'production' ? undefined : error.message,
+        });
+    }
+};
+
 const createSponsor = async (req, res) => {
     try {
         const { name, logo_url, link, position, active, tenant_id } = req.body;
@@ -31,7 +62,9 @@ const createSponsor = async (req, res) => {
         const urlPattern = /^https?:\/\/[^\s]+$/i;
         if (!cleanName || cleanName.length > 150 ||
             (cleanLogo && (!urlPattern.test(cleanLogo) || cleanLogo.length > 500)) ||
-            (cleanLink && (!urlPattern.test(cleanLink) || cleanLink.length > 500))) {
+            (cleanLink && (!urlPattern.test(cleanLink) || cleanLink.length > 500)) ||
+            (position !== undefined && !SPONSOR_POSITIONS.includes(position)) ||
+            (active !== undefined && typeof active !== 'boolean')) {
             return res.status(400).json({ success: false, message: 'Nombre o URLs del patrocinador no son válidos.' });
         }
         const tid = req.user.role === 'superadmin' ? (tenant_id || req.user.tenant_id) : req.user.tenant_id;
@@ -66,6 +99,26 @@ const updateSponsor = async (req, res) => {
         for (const key of allowed) {
             if (req.body[key] !== undefined) patch[key] = req.body[key];
         }
+        if (patch.name !== undefined) {
+            if (typeof patch.name !== 'string' || !patch.name.trim() || patch.name.trim().length > 150) {
+                return res.status(400).json({ success: false, message: 'El nombre del patrocinador no es válido.' });
+            }
+            patch.name = patch.name.trim();
+        }
+        for (const key of ['logo_url', 'link']) {
+            if (patch[key] !== undefined) {
+                if (typeof patch[key] !== 'string' || (patch[key].trim() && !/^https?:\/\/[^\s]+$/i.test(patch[key].trim())) || patch[key].trim().length > 500) {
+                    return res.status(400).json({ success: false, message: 'La URL del patrocinador no es válida.' });
+                }
+                patch[key] = patch[key].trim() || null;
+            }
+        }
+        if (patch.position !== undefined && !SPONSOR_POSITIONS.includes(patch.position)) {
+            return res.status(400).json({ success: false, message: 'La ubicación del patrocinador no es válida.' });
+        }
+        if (patch.active !== undefined && typeof patch.active !== 'boolean') {
+            return res.status(400).json({ success: false, message: 'El estado del patrocinador no es válido.' });
+        }
         const { data, error } = await supabase.from('sponsors').update(patch).eq('id', id).select('*, tenants(name)').single();
         if (error) throw error;
         return res.status(200).json({ success: true, message: 'Patrocinador actualizado.', data });
@@ -90,4 +143,4 @@ const deleteSponsor = async (req, res) => {
     }
 };
 
-module.exports = { getSponsors, createSponsor, updateSponsor, deleteSponsor };
+module.exports = { getSponsors, getPublicSponsors, createSponsor, updateSponsor, deleteSponsor };

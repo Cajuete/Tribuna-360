@@ -1,3 +1,4 @@
+import AlertBanner from '../components/AlertBanner';
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ticketService } from '../api/ticket.service';
@@ -32,7 +33,7 @@ export default function MyHistory() {
   return (
     <div className="max-w-4xl mx-auto px-6 py-10">
       <h2 className="text-3xl font-bold mb-6">Mi Historial</h2>
-      {error && <p className="mb-4 alert-error">{error}</p>}
+      <AlertBanner message={error} type="error" onClose={() => setError(null)} className="mb-4" />
 
       {items.length === 0 && (
         <div className="text-center py-12 bg-gray-800 border border-gray-700 rounded-2xl">

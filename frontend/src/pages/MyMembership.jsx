@@ -1,3 +1,4 @@
+import AlertBanner from '../components/AlertBanner';
 import { useState, useEffect } from 'react';
 import { useLocation, Link, useNavigate } from 'react-router-dom';
 import { membershipService } from '../api/membership.service';
@@ -11,7 +12,7 @@ export default function MyMembership() {
   const [actionMessage, setActionMessage] = useState(null);
   const location = useLocation();
   const navigate = useNavigate();
-  const message = location.state?.message;
+  const [message, setMessage] = useState(location.state?.message);
 
   const load = () => {
     membershipService.getMine()
@@ -64,10 +65,10 @@ export default function MyMembership() {
     <div className="max-w-3xl mx-auto px-6 py-10">
       <h2 className="text-3xl font-bold mb-6">Mi Membresía</h2>
 
-      {message && <p className="mb-6 p-3 rounded text-center bg-emerald-900 text-emerald-300">{message}</p>}
-      {actionMessage && <p className="mb-6 p-3 rounded text-center bg-emerald-900 text-emerald-300">{actionMessage}</p>}
+      <AlertBanner message={message} type="success" onClose={() => setMessage(null)} className="mb-6 p-3 rounded text-center bg-emerald-900 text-emerald-300" />
+      <AlertBanner message={actionMessage} type="success" onClose={() => setActionMessage(null)} className="mb-6 p-3 rounded text-center bg-emerald-900 text-emerald-300" />
       {loading && <p className="text-center text-gray-400 py-8">Cargando membresías...</p>}
-      {error && <p className="p-3 rounded text-center bg-red-900 text-red-300">{error}</p>}
+      <AlertBanner message={error} type="error" onClose={() => setError(null)} className="p-3 rounded text-center bg-red-900 text-red-300" />
       <p className="text-xs text-gray-500 mb-5">La renovación se aplica cuando el club confirma el pago. Una cancelación solicitada requiere revisión del club.</p>
 
       {!loading && !error && memberships.length === 0 && (

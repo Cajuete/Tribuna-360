@@ -1,3 +1,4 @@
+import AlertBanner from '../components/AlertBanner';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { paymentService } from '../api/payment.service';
@@ -32,7 +33,7 @@ export default function MyPayments() {
     <div className="max-w-4xl mx-auto px-6 py-10">
       <h1 className="text-3xl font-bold mb-6">Mis pagos</h1>
       {loading && <p className="text-gray-400">Cargando pagos...</p>}
-      {error && <p className="rounded-lg bg-red-950 p-3 text-red-200">{error}</p>}
+      <AlertBanner message={error} type="error" onClose={() => setError(null)} className="rounded-lg bg-red-950 p-3 text-red-200" />
       {!loading && !error && payments.length === 0 && (
         <p className="rounded-xl border border-slate-700 bg-slate-800 p-6 text-gray-300">Todavía no tienes pagos iniciados.</p>
       )}

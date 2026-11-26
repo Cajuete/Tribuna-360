@@ -1,4 +1,5 @@
 const { supabase } = require('../config/supabase');
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const tenantFilter = (req, query) => {
     if (req.user.role === 'superadmin') {
@@ -24,7 +25,7 @@ const createPromotion = async (req, res) => {
     try {
         const {
             code, description, discount_type, discount_value, applies_to,
-            zone_name, max_uses, starts_at, ends_at, is_active, tenant_id
+            zone_name, max_uses, starts_at, ends_at, is_active, tenant_id, audience
         } = req.body;
 
         const cleanCode = typeof code === 'string' ? code.trim() : '';
@@ -33,8 +34,8 @@ const createPromotion = async (req, res) => {
         const value = Number(discount_value);
         const uses = max_uses === '' || max_uses === undefined || max_uses === null ? null : Number(max_uses);
         if (!cleanCode || cleanCode.length > 50 || discount_value === undefined || discount_value === null ||
-            !Number.isFinite(value) || value < 0 ||
-            (discount_type === 'fixed' ? false : value > 100) ||
+            !Number.isFinite(value) || value <= 0 ||
+            (discount_type === 'fixed' ? false : value >= 100) ||
             cleanDescription.length > 500 || cleanZone.length > 100 ||
             (uses !== null && (!Number.isInteger(uses) || uses < 1)) ||
             (starts_at && ends_at && new Date(ends_at) <= new Date(starts_at))) {
@@ -53,7 +54,8 @@ const createPromotion = async (req, res) => {
             discount_type: discount_type === 'fixed' ? 'fixed' : 'percentage',
             discount_value: Number(discount_value),
             applies_to: ['tickets', 'products', 'both'].includes(applies_to) ? applies_to : 'both',
-            zone_name: cleanZone || null,
+            audience: ['all', 'members'].includes(audience) ? audience : 'all',
+            zone_name: applies_to === 'products' ? null : cleanZone || null,
             max_uses: max_uses ? Number(max_uses) : null,
             starts_at: starts_at || null,
             ends_at: ends_at || null,
@@ -72,7 +74,7 @@ const updatePromotion = async (req, res) => {
     try {
         const { id } = req.params;
         const { data: existing, error: findError } = await supabase
-            .from('promotions').select('id, tenant_id').eq('id', id).single();
+            .from('promotions').select('id, tenant_id, discount_type, discount_value, applies_to').eq('id', id).single();
         if (findError || !existing) {
             return res.status(404).json({ success: false, message: 'Promoción no encontrada.' });
         }
@@ -81,15 +83,35 @@ const updatePromotion = async (req, res) => {
         }
 
         const patch = {};
-        const allowed = ['code', 'description', 'discount_type', 'discount_value', 'applies_to', 'zone_name', 'max_uses', 'starts_at', 'ends_at', 'is_active'];
+        if (req.body.code !== undefined) {
+            const code = typeof req.body.code === 'string' ? req.body.code.trim() : '';
+            if (!code || code.length > 50) {
+                return res.status(400).json({ success: false, message: 'El código debe tener entre 1 y 50 caracteres.' });
+            }
+        }
+        if (req.body.discount_value !== undefined || req.body.discount_type !== undefined) {
+            const value = Number(req.body.discount_value ?? existing.discount_value);
+            const type = req.body.discount_type || existing.discount_type;
+            if (!Number.isFinite(value) || value <= 0 || (type !== 'fixed' && value >= 100)) {
+                return res.status(400).json({ success: false, message: 'El descuento debe ser mayor que 0 y, si es porcentaje, menor que 100.' });
+            }
+        }
+        const allowed = ['code', 'description', 'discount_type', 'discount_value', 'applies_to', 'audience', 'zone_name', 'max_uses', 'starts_at', 'ends_at', 'is_active'];
         for (const key of allowed) {
             if (req.body[key] !== undefined) {
                 if (key === 'code') patch.code = String(req.body.code).trim().toUpperCase();
                 else if (key === 'discount_type') patch.discount_type = req.body.discount_type === 'fixed' ? 'fixed' : 'percentage';
                 else if (key === 'applies_to') patch.applies_to = ['tickets', 'products', 'both'].includes(req.body.applies_to) ? req.body.applies_to : 'both';
+                else if (key === 'audience') {
+                    if (!['all', 'members'].includes(req.body.audience)) {
+                        return res.status(400).json({ success: false, message: 'La audiencia de la promoción no es válida.' });
+                    }
+                    patch.audience = req.body.audience;
+                }
                 else patch[key] = req.body[key];
             }
         }
+        if ((patch.applies_to || existing.applies_to) === 'products') patch.zone_name = null;
 
         const { data, error } = await supabase.from('promotions').update(patch).eq('id', id).select('*, tenants(name)').single();
         if (error) throw error;
@@ -117,6 +139,121 @@ const deletePromotion = async (req, res) => {
         return res.status(500).json({ success: false, message: 'Error al eliminar la promoción', error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : error.message) });
     }
 };
+
+const validatePromotionCode = async (req, res) => {
+    try {
+        const body = req.body || {};
+        const code = typeof body.code === 'string' ? body.code.trim().toUpperCase() : '';
+        const purchaseType = body.purchase_type;
+        if (!code || code.length > 50 || !['ticket', 'store'].includes(purchaseType)) {
+            return res.status(400).json({ success: false, message: 'Escribe un código y selecciona una compra válida.' });
+        }
+
+        let tenantId;
+        let zoneName = null;
+        if (purchaseType === 'ticket') {
+            if (!UUID_RE.test(String(body.match_id || '')) || !UUID_RE.test(String(body.zone_id || '')) ||
+                !Number.isSafeInteger(Number(body.quantity)) || Number(body.quantity) < 1) {
+                return res.status(400).json({ success: false, message: 'Selecciona una zona y una cantidad válida antes de aplicar el código.' });
+            }
+            const { data: match, error: matchError } = await supabase
+                .from('matches').select('id, tenant_id').eq('id', body.match_id).maybeSingle();
+            if (matchError) throw matchError;
+            if (!match) return res.status(404).json({ success: false, message: 'No se encontró el partido.' });
+            const { data: zone, error: zoneError } = await supabase
+                .from('zones').select('id, name, match_id').eq('id', body.zone_id).eq('match_id', body.match_id).maybeSingle();
+            if (zoneError) throw zoneError;
+            if (!zone) return res.status(404).json({ success: false, message: 'La zona no pertenece a este partido.' });
+            tenantId = match.tenant_id;
+            zoneName = zone.name;
+        } else {
+            const items = body.items;
+            if (!Array.isArray(items) || items.length < 1 || items.length > 10 ||
+                items.some(item => !UUID_RE.test(String(item?.product_id || '')) ||
+                    !Number.isInteger(Number(item.quantity)) || Number(item.quantity) < 1 || Number(item.quantity) > 10) ||
+                new Set(items.map(item => item.product_id)).size !== items.length) {
+                return res.status(400).json({ success: false, message: 'El carrito debe contener productos y cantidades válidas.' });
+            }
+            const { data: products, error: productsError } = await supabase
+                .from('products').select('id, tenant_id').in('id', items.map(item => item.product_id));
+            if (productsError) throw productsError;
+            if (!products || products.length !== items.length) {
+                return res.status(404).json({ success: false, message: 'Uno de los productos ya no está disponible.' });
+            }
+            tenantId = products[0].tenant_id;
+            if (products.some(product => product.tenant_id !== tenantId)) {
+                return res.status(400).json({ success: false, message: 'El código solo se puede aplicar a productos de un mismo club.' });
+            }
+        }
+
+        const { data: promotion, error: promotionError } = await supabase
+            .from('promotions')
+            .select('code, description, discount_type, discount_value, applies_to, audience, zone_name, max_uses, used_count, starts_at, ends_at, is_active')
+            .eq('tenant_id', tenantId)
+            .eq('code', code)
+            .maybeSingle();
+        if (promotionError) throw promotionError;
+        if (!promotion || !promotion.is_active) {
+            return res.status(400).json({ success: false, message: 'El código no existe o no está activo.' });
+        }
+        const now = Date.now();
+        if ((promotion.starts_at && Date.parse(promotion.starts_at) > now) ||
+            (promotion.ends_at && Date.parse(promotion.ends_at) <= now)) {
+            return res.status(400).json({ success: false, message: 'El código todavía no está vigente o ya venció.' });
+        }
+        if (promotion.max_uses !== null && Number(promotion.used_count) >= Number(promotion.max_uses)) {
+            return res.status(400).json({ success: false, message: 'Este código alcanzó su límite de usos.' });
+        }
+        const requiredTarget = purchaseType === 'ticket' ? 'tickets' : 'products';
+        if (promotion.applies_to !== 'both' && promotion.applies_to !== requiredTarget) {
+            return res.status(400).json({ success: false, message: 'Este código no aplica a este tipo de compra.' });
+        }
+        if (promotion.discount_type === 'percentage' && Number(promotion.discount_value) >= 100) {
+            return res.status(400).json({ success: false, message: 'El descuento no puede dejar el pago en cero.' });
+        }
+        if (purchaseType === 'ticket' && promotion.zone_name &&
+            promotion.zone_name.trim().toLocaleLowerCase() !== String(zoneName).trim().toLocaleLowerCase()) {
+            return res.status(400).json({ success: false, message: `Este código solo aplica a la zona ${promotion.zone_name}.` });
+        }
+        if (purchaseType === 'store' && promotion.zone_name) {
+            return res.status(400).json({ success: false, message: 'Este código está limitado a entradas de una zona específica.' });
+        }
+        if (promotion.audience === 'members') {
+            const { data: memberships, error: membershipError } = await supabase
+                .from('memberships')
+                .select('expires_at')
+                .eq('user_id', req.user.id)
+                .eq('tenant_id', tenantId)
+                .eq('status', 'active');
+            if (membershipError) throw membershipError;
+            const hasCurrentMembership = (memberships || []).some(membership =>
+                !membership.expires_at || Date.parse(membership.expires_at) > now);
+            if (!hasCurrentMembership) {
+                return res.status(403).json({ success: false, message: 'Este código es exclusivo para socios con membresía vigente de este club.' });
+            }
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: 'Código válido.',
+            data: {
+                code: promotion.code,
+                description: promotion.description,
+                discount_type: promotion.discount_type,
+                discount_value: Number(promotion.discount_value),
+                applies_to: promotion.applies_to,
+                audience: promotion.audience || 'all',
+            },
+        });
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: 'No se pudo validar el código promocional.',
+            error: process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : error.message,
+        });
+    }
+};
+
 const getSalesMetrics = async (req, res) => {
     try {
         const isSuperadmin = req.user.role === 'superadmin';
@@ -243,6 +380,7 @@ const matchTickets = tickets.filter(t => t.match_id === m.id);
 module.exports = {
     getPromotions,
     createPromotion,
+    validatePromotionCode,
     updatePromotion,
     deletePromotion,
     getSalesMetrics

@@ -1,5 +1,7 @@
 const crypto = require('crypto');
 const { supabase } = require('../config/supabase');
+const { isValidBolivianCi } = require('../utils/bolivian-validation');
+const { getTicketCapacity } = require('../utils/ticket-capacity');
 const {
     isEnabled: isWaitingRoomEnabled,
     releasePurchaseAccess,
@@ -14,12 +16,35 @@ const purchaseTicket = async (req, res) => {
     try {
         const { match_id, zone_id, quantity, buyer_ci, buyer_name, payment_method, queue_token } = req.body;
         const buyer_id = req.user.id;
-        const qty = Number.parseInt(quantity, 10);
+        const qty = Number(quantity);
 
-        if (!match_id || !zone_id || !Number.isInteger(qty) || qty < 1 || qty > 10) {
+        if (!match_id || !zone_id || !Number.isSafeInteger(qty) || qty < 1) {
             return res.status(400).json({
                 success: false,
-                message: 'Datos inválidos: se requiere partido, zona y cantidad (entre 1 y 10).'
+                message: 'Datos inválidos: se requiere partido, zona y una cantidad válida.'
+            });
+        }
+
+        const { zone, available } = await getTicketCapacity(match_id, zone_id);
+        if (!zone) {
+            return res.status(404).json({ success: false, message: 'La zona indicada no pertenece a este partido.' });
+        }
+        if (!zone.is_enabled) {
+            return res.status(409).json({ success: false, message: 'Esta zona no está habilitada para la venta.' });
+        }
+        if (zone.sale_mode === 'numbered') {
+            return res.status(409).json({ success: false, message: 'Esta zona tiene butacas numeradas; la compra se habilitará cuando esté disponible la selección de asientos.' });
+        }
+        if (qty > available) {
+            return res.status(409).json({ success: false, message: `Aforo insuficiente en esta zona: quedan ${available} entrada(s).` });
+        }
+
+        const buyerCi = buyer_ci === undefined || buyer_ci === null ? '' : String(buyer_ci).trim();
+        const cleanBuyerCi = buyerCi || null;
+        if (cleanBuyerCi !== null && !isValidBolivianCi(cleanBuyerCi)) {
+            return res.status(400).json({
+                success: false,
+                message: 'El C.I. debe tener entre 6 y 8 digitos.',
             });
         }
 
@@ -48,7 +73,7 @@ const purchaseTicket = async (req, res) => {
 
         const newTickets = Array.from({ length: qty }, () => ({
             qr_code: generateQrCode(),
-            buyer_ci: buyer_ci ? String(buyer_ci).trim() : null,
+            buyer_ci: cleanBuyerCi,
             buyer_name: buyer_name ? String(buyer_name).trim() : null,
             payment_method: payment_method || 'efectivo',
             sold_by_cashier: isCashier ? req.user.id : null,

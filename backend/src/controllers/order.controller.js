@@ -1,6 +1,17 @@
 const { supabase } = require('../config/supabase');
+const crypto = require('crypto');
 
-const VALID_STATUSES = ['pending', 'paid', 'shipped', 'cancelled'];
+const DELIVERY_PROOF_BUCKET = 'delivery-proofs';
+const DELIVERY_PROOF_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+
+const attachDeliveryProofs = async (orders) => Promise.all((orders || []).map(async order => {
+    if (!order.delivery_proof_path) return order;
+    const { data, error } = await supabase.storage
+        .from(DELIVERY_PROOF_BUCKET)
+        .createSignedUrl(order.delivery_proof_path, 10 * 60);
+    if (error) throw error;
+    return { ...order, delivery_proof_url: data.signedUrl };
+}));
 
 const createOrder = async (req, res) => {
     try {
@@ -81,13 +92,17 @@ const getMyOrders = async (req, res) => {
     try {
         const { data, error } = await supabase
             .from('orders')
-            .select('*, products(name, description, image_url), tenants(name)')
+            .select('*, products(name, description, image_url), tenants(name), payments!orders_payment_id_fkey(purchase_data)')
             .eq('user_id', req.user.id)
             .order('created_at', { ascending: false });
 
         if (error) throw error;
 
-        return res.status(200).json({ success: true, data });
+        const orders = (data || []).map(({ payments, ...order }) => ({
+            ...order,
+            delivery: payments?.purchase_data?.delivery || null,
+        }));
+        return res.status(200).json({ success: true, data: await attachDeliveryProofs(orders) });
     } catch (error) {
         return res.status(500).json({
             success: false,
@@ -99,13 +114,19 @@ const getMyOrders = async (req, res) => {
 
 const getOrders = async (req, res) => {
     try {
+        const isDeliveryManager = req.user.role === 'delivery_manager';
+        const canViewDelivery = ['superadmin', 'club_admin', 'sales_manager', 'delivery_manager'].includes(req.user.role);
+        const deliverySelect = canViewDelivery ? ', payments!orders_payment_id_fkey(purchase_data)' : '';
         let query = supabase
             .from('orders')
-            .select('*, users(email, full_name), products(name, image_url), tenants(name)')
+            .select(`*, users!orders_user_id_fkey(email, full_name), products(name, image_url), tenants(name)${deliverySelect}`)
             .order('created_at', { ascending: false });
 
         if (req.user.role !== 'superadmin') {
             query = query.eq('tenant_id', req.user.tenant_id);
+        }
+        if (isDeliveryManager) {
+            query = query.in('status', ['paid', 'shipped', 'delivered']);
         }
         if (req.query.status) {
             query = query.eq('status', req.query.status);
@@ -114,8 +135,16 @@ const getOrders = async (req, res) => {
         const { data, error } = await query;
         if (error) throw error;
 
-        return res.status(200).json({ success: true, data });
+        const orders = canViewDelivery
+            ? (data || []).map(({ payments, ...order }) => ({
+                ...order,
+                delivery: payments?.purchase_data?.delivery || null,
+            }))
+            : (data || []).map(({ delivery_proof_path, delivered_by, ...order }) => order);
+        const responseOrders = canViewDelivery ? await attachDeliveryProofs(orders) : orders;
+        return res.status(200).json({ success: true, data: responseOrders });
     } catch (error) {
+        console.error('[Orders] No se pudieron obtener los pedidos:', error.message);
         return res.status(500).json({
             success: false,
             message: 'Error al obtener los pedidos',
@@ -129,6 +158,9 @@ const updateOrderStatus = async (req, res) => {
         const { id } = req.params;
         const { status } = req.body;
 
+        if (req.user.role === 'delivery_manager' && status !== 'shipped') {
+            return res.status(403).json({ success: false, message: 'El despachador solo puede preparar pedidos pagados para su entrega.' });
+        }
         if (!['shipped', 'cancelled'].includes(status)) {
             return res.status(400).json({
                 success: false,
@@ -157,14 +189,20 @@ const updateOrderStatus = async (req, res) => {
             });
         }
 
-        const { data, error } = await supabase
+        let updateQuery = supabase
             .from('orders')
             .update({ status })
-            .eq('id', id)
-            .select()
-            .single();
+            .eq('tenant_id', order.tenant_id)
+            .eq('status', 'paid');
+        updateQuery = status === 'shipped' && order.payment_id
+            ? updateQuery.eq('payment_id', order.payment_id)
+            : updateQuery.eq('id', id);
+        const { data, error } = await updateQuery.select();
 
         if (error) throw error;
+        if (!data?.length) {
+            return res.status(409).json({ success: false, message: 'El pedido cambió de estado. Actualiza la lista e inténtalo de nuevo.' });
+        }
 
         if (status === 'cancelled') {
             await supabase
@@ -189,9 +227,87 @@ const updateOrderStatus = async (req, res) => {
     }
 };
 
+const markOrderDelivered = async (req, res) => {
+    let uploadedPath = null;
+    try {
+        const { id } = req.params;
+        if (!req.file || !DELIVERY_PROOF_TYPES[req.file.mimetype]) {
+            return res.status(400).json({ success: false, message: 'Adjunta una foto JPG, PNG o WEBP como comprobante de entrega.' });
+        }
+        if (req.file.size > 5 * 1024 * 1024) {
+            return res.status(400).json({ success: false, message: 'La foto de entrega no puede superar 5 MB.' });
+        }
+
+        const { data: order, error: orderError } = await supabase
+            .from('orders')
+            .select('id, tenant_id, payment_id, status')
+            .eq('id', id)
+            .maybeSingle();
+        if (orderError) throw orderError;
+        if (!order) return res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
+        if (req.user.role !== 'superadmin' && req.user.tenant_id !== order.tenant_id) {
+            return res.status(403).json({ success: false, message: 'Pedido de otro club.' });
+        }
+        if (order.status !== 'shipped') {
+            return res.status(409).json({ success: false, message: 'Solo se puede confirmar la entrega de un pedido que ya está en despacho.' });
+        }
+
+        uploadedPath = `${order.tenant_id}/${order.payment_id || order.id}/${crypto.randomUUID()}.${DELIVERY_PROOF_TYPES[req.file.mimetype]}`;
+        const { error: uploadError } = await supabase.storage
+            .from(DELIVERY_PROOF_BUCKET)
+            .upload(uploadedPath, req.file.buffer, {
+                contentType: req.file.mimetype,
+                cacheControl: '3600',
+                upsert: false,
+            });
+        if (uploadError) throw uploadError;
+
+        let updateQuery = supabase
+            .from('orders')
+            .update({
+                status: 'delivered',
+                delivery_proof_path: uploadedPath,
+                delivered_at: new Date().toISOString(),
+                delivered_by: req.user.id,
+            })
+            .eq('tenant_id', order.tenant_id)
+            .eq('status', 'shipped');
+        updateQuery = order.payment_id
+            ? updateQuery.eq('payment_id', order.payment_id)
+            : updateQuery.eq('id', order.id);
+        const { data, error } = await updateQuery.select('id, status, delivered_at');
+        if (error) throw error;
+        if (!data?.length) {
+            const { error: cleanupError } = await supabase.storage
+                .from(DELIVERY_PROOF_BUCKET)
+                .remove([uploadedPath]);
+            if (cleanupError) console.error('[Orders] No se pudo limpiar la foto de entrega:', cleanupError.message);
+            uploadedPath = null;
+            return res.status(409).json({ success: false, message: 'El pedido cambió de estado. Actualiza la lista e inténtalo de nuevo.' });
+        }
+
+        uploadedPath = null;
+        return res.status(200).json({
+            success: true,
+            message: 'Entrega confirmada con foto.',
+            data,
+        });
+    } catch (error) {
+        if (uploadedPath) {
+            const { error: cleanupError } = await supabase.storage
+                .from(DELIVERY_PROOF_BUCKET)
+                .remove([uploadedPath]);
+            if (cleanupError) console.error('[Orders] No se pudo limpiar la foto de entrega:', cleanupError.message);
+        }
+        console.error('[Orders] No se pudo confirmar la entrega:', error.message);
+        return res.status(500).json({ success: false, message: 'No se pudo confirmar la entrega.' });
+    }
+};
+
 module.exports = {
     createOrder,
     getMyOrders,
     getOrders,
-    updateOrderStatus
+    updateOrderStatus,
+    markOrderDelivered,
 };

@@ -1,3 +1,4 @@
+import AlertBanner from '../components/AlertBanner';
 import { useState, useEffect } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import QRCode from 'qrcode';
@@ -14,7 +15,7 @@ export default function MyTickets() {
 
   useEffect(() => {
     if (!msg) return;
-    const t = setTimeout(() => setMsg(null), 4000);
+    const t = setTimeout(() => setMsg(null), 7000);
     return () => clearTimeout(t);
   }, [msg]);
 
@@ -63,7 +64,7 @@ export default function MyTickets() {
       )}
 
       {loading && <p className="text-center text-slate-400 py-12 print:hidden">Cargando tus entradas digitales...</p>}
-      {error && <p className="p-4 rounded-xl text-center bg-red-950 border border-red-500 text-red-200 print:hidden">{error}</p>}
+      <AlertBanner message={error} type="error" onClose={() => setError(null)} className="p-4 rounded-xl text-center bg-red-950 border border-red-500 text-red-200 print:hidden" />
 
       {!loading && !error && tickets.length === 0 && (
         <div className="text-center py-16 card border border-slate-800 rounded-3xl print:hidden">

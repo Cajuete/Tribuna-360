@@ -1,5 +1,7 @@
 const crypto = require('crypto');
 const { supabase } = require('../config/supabase');
+const { isValidBolivianCi, isValidBolivianPhone } = require('../utils/bolivian-validation');
+const { getTicketCapacity } = require('../utils/ticket-capacity');
 const {
     isEnabled: isWaitingRoomEnabled,
     releasePurchaseAccess,
@@ -21,6 +23,10 @@ const QR_FILE_TYPES = {
     'image/png': 'png',
     'image/webp': 'webp',
 };
+const DELIVERY_DEPARTMENTS = [
+    'Beni', 'Chuquisaca', 'Cochabamba', 'La Paz', 'Oruro',
+    'Pando', 'Potosí', 'Santa Cruz', 'Tarija',
+];
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const expireStalePayments = async () => {
@@ -40,15 +46,45 @@ const createPayment = async (req, res) => {
         }
 
         const purchaseData = data && typeof data === 'object' && !Array.isArray(data) ? { ...data } : {};
+        if (purchaseData.promo_code !== undefined) {
+            if (!['ticket', 'store'].includes(purchase_type) ||
+                typeof purchaseData.promo_code !== 'string' ||
+                purchaseData.promo_code.trim().length > 50) {
+                return res.status(400).json({ success: false, message: 'El código promocional no es válido para esta compra.' });
+            }
+            purchaseData.promo_code = purchaseData.promo_code.trim().toUpperCase();
+            if (!purchaseData.promo_code) delete purchaseData.promo_code;
+        }
         if (purchase_type === 'ticket') {
             const quantity = Number(purchaseData.quantity);
             if (!UUID_RE.test(String(purchaseData.match_id || '')) || !UUID_RE.test(String(purchaseData.zone_id || '')) ||
-                !Number.isInteger(quantity) || quantity < 1 || quantity > 10) {
-                return res.status(400).json({ success: false, message: 'Selecciona un partido, una zona y entre 1 y 10 entradas.' });
+                !Number.isSafeInteger(quantity) || quantity < 1) {
+                return res.status(400).json({ success: false, message: 'Selecciona un partido, una zona y una cantidad válida de entradas.' });
             }
             purchaseData.match_id = String(purchaseData.match_id);
             purchaseData.zone_id = String(purchaseData.zone_id);
             purchaseData.quantity = quantity;
+            const { zone, available } = await getTicketCapacity(purchaseData.match_id, purchaseData.zone_id);
+            if (!zone) return res.status(404).json({ success: false, message: 'La zona no pertenece a este partido.' });
+            if (!zone.is_enabled) return res.status(409).json({ success: false, message: 'Esta zona no está habilitada para la venta.' });
+            if (zone.sale_mode === 'numbered') {
+                return res.status(409).json({ success: false, message: 'Esta zona requiere selección de butacas y aún no está habilitada para la venta.' });
+            }
+            if (quantity > available) {
+                return res.status(409).json({ success: false, message: `Aforo insuficiente en esta zona: quedan ${available} entrada(s).` });
+            }
+            const buyerCi = purchaseData.buyer_ci === undefined || purchaseData.buyer_ci === null
+                ? ''
+                : String(purchaseData.buyer_ci).trim();
+            if (purchaseData.buyer_ci !== undefined) {
+                purchaseData.buyer_ci = buyerCi || null;
+            }
+            if (buyerCi) {
+                if (!isValidBolivianCi(buyerCi)) {
+                    return res.status(400).json({ success: false, message: 'El C.I. debe tener entre 6 y 8 digitos.' });
+                }
+                purchaseData.buyer_ci = buyerCi;
+            }
         }
         if (purchase_type === 'store') {
             const items = purchaseData.items;
@@ -61,6 +97,48 @@ const createPayment = async (req, res) => {
                 product_id: String(item.product_id),
                 quantity: Number(item.quantity),
             }));
+
+            const rawDelivery = purchaseData.delivery;
+            const text = (value, maxLength) => {
+                if (value === undefined || value === null) return '';
+                if (typeof value !== 'string') return null;
+                const normalized = value.trim();
+                return normalized.length <= maxLength ? normalized : null;
+            };
+            const recipientName = text(rawDelivery?.recipient_name, 120);
+            const phone = text(rawDelivery?.phone, 30);
+            const method = rawDelivery?.method;
+            const city = text(rawDelivery?.city, 100);
+            const department = rawDelivery?.department;
+            const zone = text(rawDelivery?.zone, 100);
+            const street = text(rawDelivery?.street, 160);
+            const number = text(rawDelivery?.number, 30);
+            const location = text(rawDelivery?.location, 240);
+            const reference = text(rawDelivery?.reference, 250);
+            if (
+                !rawDelivery || typeof rawDelivery !== 'object' || Array.isArray(rawDelivery) ||
+                [recipientName, phone, city, zone, street, number, location, reference].some(value => value === null) ||
+                recipientName.length < 2 || !isValidBolivianPhone(phone) || !['home', 'point'].includes(method) ||
+                !DELIVERY_DEPARTMENTS.includes(department) ||
+                city.length < 2 ||
+                (method === 'home' && (zone.length < 2 || street.length < 2)) ||
+                (method === 'point' && location.length < 5)
+            ) {
+                return res.status(400).json({ success: false, message: 'Completa un nombre y una ubicación válidos; el celular debe tener 8 dígitos y comenzar con 5, 6 o 7.' });
+            }
+            purchaseData.delivery = {
+                recipient_name: recipientName,
+                phone,
+                method,
+                city,
+                department,
+                zone: method === 'home' ? zone : '',
+                street: method === 'home' ? street : '',
+                number: method === 'home' ? number : '',
+                location: method === 'point' ? location : '',
+                reference,
+                fee_status: 'to_quote',
+            };
         }
         if (purchase_type === 'membership') {
             if (!UUID_RE.test(String(purchaseData.plan_id || ''))) {
@@ -97,19 +175,23 @@ const createPayment = async (req, res) => {
                 qr_code: `TRIBUNA360-${crypto.randomBytes(12).toString('hex').toUpperCase()}`,
             }))
             : [];
-        const { data: result, error } = await supabase.rpc('create_manual_payment', {
+        const rpcPurchaseData = { ...purchaseData };
+        const delivery = purchase_type === 'store' ? rpcPurchaseData.delivery : null;
+        delete rpcPurchaseData.delivery;
+        const { data: result, error } = await supabase.rpc('create_manual_payment_with_delivery', {
             p_user_id: req.user.id,
             p_purchase_type: purchase_type,
-            p_data: purchaseData,
+            p_data: rpcPurchaseData,
             p_ticket_codes: ticketCodes,
             p_idempotency_key: idempotency_key,
+            p_delivery: delivery,
         });
 
         if (error) {
             const message = error.message || '';
             const validationErrors = {
                 INVALID_PAYMENT_REQUEST: [400, 'Solicitud de pago no válida.'],
-                INVALID_TICKET_COUNT: [400, 'Selecciona entre 1 y 10 entradas.'],
+                INVALID_TICKET_COUNT: [400, 'La cantidad de entradas no es válida.'],
                 MATCH_NOT_FOUND: [404, 'Partido no encontrado.'],
                 ZONE_NOT_FOUND: [404, 'La zona no pertenece a este partido.'],
                 ZONE_DISABLED: [409, 'Esta zona no está habilitada para la venta.'],
@@ -117,9 +199,20 @@ const createPayment = async (req, res) => {
                 INSUFFICIENT_CAPACITY: [409, 'Ya no hay aforo suficiente para esta compra.'],
                 INVALID_ORDER_ITEMS: [400, 'El carrito debe tener entre 1 y 10 productos.'],
                 INVALID_ORDER_QUANTITY: [400, 'La cantidad de un producto no es válida.'],
+                INVALID_DELIVERY_DETAILS: [400, 'Completa los datos de entrega antes de continuar.'],
+                DELIVERY_DEPARTMENT_NOT_CONFIGURED: [409, 'El club debe configurar primero el departamento de origen para los envíos.'],
                 PRODUCT_NOT_FOUND: [404, 'Uno de los productos ya no está disponible.'],
                 CROSS_TENANT_CART_NOT_ALLOWED: [400, 'El carrito debe incluir productos de un solo club.'],
                 INSUFFICIENT_STOCK: [409, 'No hay stock suficiente para completar el carrito.'],
+                PROMOTION_CODE_INVALID: [400, 'El código no existe, no está vigente o fue desactivado.'],
+                PROMOTION_CODE_LIMIT_REACHED: [409, 'Este código alcanzó su límite de usos.'],
+                PROMOTION_CODE_NOT_APPLICABLE: [400, 'Este código no aplica a este tipo de compra.'],
+                PROMOTION_CODE_ZERO_TOTAL: [400, 'El descuento no puede dejar el pago en cero. Usa un código de menor valor.'],
+                PROMOTION_MEMBERS_ONLY: [403, 'Este código es exclusivo para socios con membresía vigente de este club.'],
+                PROMOTION_ZONE_RESTRICTED: [400, 'Este código no aplica a la zona seleccionada.'],
+                PROMOTION_CODE_NO_DISCOUNT: [400, 'Este código no genera un descuento para esta compra.'],
+                PROMOTION_PAYMENT_NOT_ACTIVE: [409, 'No se puede aplicar el código a un pago que ya no está pendiente.'],
+                PROMOTION_ALREADY_APPLIED: [409, 'Este pago ya tiene otro código promocional aplicado.'],
                 PLAN_NOT_FOUND: [404, 'Plan de membresía no encontrado.'],
                 ACTIVE_MEMBERSHIP_EXISTS: [409, 'Ya tienes una membresía activa en este club.'],
                 MEMBERSHIP_PAYMENT_PENDING: [409, 'Ya tienes un pago de membresía pendiente de confirmación en este club.'],
@@ -179,8 +272,8 @@ const getSettings = async (req, res) => {
 
 const updateSettings = async (req, res) => {
     try {
-        if (req.user.role !== 'superadmin' && req.user.role !== 'club_admin') {
-            return res.status(403).json({ success: false, message: 'Solo el administrador del club puede configurar el QR.' });
+        if (req.user.role !== 'superadmin' && req.user.role !== 'payment_manager') {
+            return res.status(403).json({ success: false, message: 'Solo el encargado de pagos puede configurar el QR.' });
         }
         const { account_name, payment_instructions } = req.body || {};
         const accountName = typeof account_name === 'string' ? account_name.trim() : '';
@@ -221,8 +314,8 @@ const updateSettings = async (req, res) => {
 const uploadQr = async (req, res) => {
     let uploadedPath = null;
     try {
-        if (req.user.role !== 'superadmin' && req.user.role !== 'club_admin') {
-            return res.status(403).json({ success: false, message: 'Solo el administrador del club puede configurar el QR.' });
+        if (req.user.role !== 'superadmin' && req.user.role !== 'payment_manager') {
+            return res.status(403).json({ success: false, message: 'Solo el encargado de pagos puede configurar el QR.' });
         }
         if (!req.file || !QR_FILE_TYPES[req.file.mimetype]) {
             return res.status(400).json({ success: false, message: 'Selecciona una imagen PNG, JPG o WEBP del QR.' });
@@ -272,6 +365,18 @@ const signProof = async (payment) => {
     return { ...payment, proof_url: data.signedUrl };
 };
 
+const hideDeliveryFromUnauthorizedStaff = (payment, user) => {
+    if (
+        payment.user_id === user.id ||
+        ['superadmin', 'club_admin', 'sales_manager'].includes(user.role) ||
+        !payment.purchase_data?.delivery
+    ) {
+        return payment;
+    }
+    const { delivery, ...purchaseData } = payment.purchase_data;
+    return { ...payment, purchase_data: purchaseData };
+};
+
 const listMine = async (req, res) => {
     try {
         await expireStalePayments();
@@ -306,7 +411,9 @@ const listPayments = async (req, res) => {
         }
         const { data, error } = await query;
         if (error) throw error;
-        const signed = await Promise.all((data || []).map(signProof));
+        const signed = await Promise.all((data || [])
+            .map(payment => hideDeliveryFromUnauthorizedStaff(payment, req.user))
+            .map(signProof));
         return res.json({ success: true, data: signed });
     } catch (error) {
         console.error('[Payments] No se pudo cargar la bandeja:', error.message);
@@ -337,7 +444,7 @@ const getPayment = async (req, res) => {
             .maybeSingle();
         if (error) throw error;
         if (!data) return res.status(404).json({ success: false, message: 'Pago no encontrado.' });
-        const payment = await signProof(data);
+        const payment = await signProof(hideDeliveryFromUnauthorizedStaff(data, req.user));
         const { data: settings, error: settingsError } = await supabase
             .from('tenant_payment_settings')
             .select('tenant_id, qr_image_url, account_name, payment_instructions')

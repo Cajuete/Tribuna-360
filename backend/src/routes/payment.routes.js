@@ -39,11 +39,11 @@ const singleFile = (field) => (req, res, next) => {
     });
 };
 
-router.post('/', verifyToken, createPayment);
+router.post('/', verifyToken, requireRole(['fan']), createPayment);
 router.get('/mine', verifyToken, listMine);
 router.get('/settings/:tenantId', verifyToken, getSettings);
-router.patch('/settings', verifyToken, requireRole(['superadmin', 'club_admin']), updateSettings);
-router.post('/settings/qr', verifyToken, requireRole(['superadmin', 'club_admin']), singleFile('qr'), uploadQr);
+router.patch('/settings', verifyToken, requireRole(['superadmin', 'payment_manager']), updateSettings);
+router.post('/settings/qr', verifyToken, requireRole(['superadmin', 'payment_manager']), singleFile('qr'), uploadQr);
 router.get('/', verifyToken, listPayments);
 router.get('/:id', verifyToken, getPayment);
 router.post('/:id/proof', verifyToken, singleFile('proof'), submitProof);

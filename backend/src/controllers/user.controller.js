@@ -1,4 +1,5 @@
 const { supabase, supabaseAuth } = require('../config/supabase');
+const { isValidBolivianCi, isValidBolivianPhone } = require('../utils/bolivian-validation');
 
 const VALID_ROLES = [
     'superadmin',
@@ -10,6 +11,7 @@ const VALID_ROLES = [
     'customer_support',
     'gate_operator',
     'payment_manager',
+    'delivery_manager',
     'fan'
 ];
 
@@ -20,7 +22,8 @@ const STAFF_ROLES = [
     'financial_auditor',
     'customer_support',
     'gate_operator',
-    'payment_manager'
+    'payment_manager',
+    'delivery_manager'
 ];
 
 const ROLES_REQUIRING_TENANT = [
@@ -31,14 +34,15 @@ const ROLES_REQUIRING_TENANT = [
     'financial_auditor',
     'customer_support',
     'gate_operator',
-    'payment_manager'
+    'payment_manager',
+    'delivery_manager'
 ];
 
 const getUsers = async (req, res) => {
     try {
         let query = supabase
             .from('users')
-            .select('id, email, full_name, role, tenant_id, created_at, tenants(name)')
+            .select('id, email, full_name, role, tenant_id, is_active, created_at, tenants!users_tenant_id_fkey(name)')
             .order('created_at', { ascending: true });
 
         if (req.user.role !== 'superadmin') {
@@ -52,6 +56,123 @@ const getUsers = async (req, res) => {
         return res.status(200).json({ status: 'success', data });
     } catch (error) {
         return res.status(500).json({ status: 'error', message: 'Error al obtener los usuarios', error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : error.message) });
+    }
+};
+
+const getManageableUser = async (req, res, id) => {
+    const { data: target, error } = await supabase
+        .from('users')
+        .select('id, email, full_name, role, tenant_id, auth_user_id, is_active')
+        .eq('id', id)
+        .maybeSingle();
+
+    if (error) throw error;
+    if (!target) {
+        res.status(404).json({ status: 'error', message: 'Usuario no encontrado.' });
+        return null;
+    }
+    if (target.id === req.user.id) {
+        res.status(400).json({ status: 'error', message: 'No puedes administrar tu propia cuenta desde esta sección.' });
+        return null;
+    }
+    if (req.user.role !== 'superadmin' &&
+        (target.tenant_id !== req.user.tenant_id || !STAFF_ROLES.includes(target.role))) {
+        res.status(403).json({ status: 'error', message: 'Solo puedes administrar al personal de tu club.' });
+        return null;
+    }
+    return target;
+};
+
+const updateManagedUserProfile = async (req, res) => {
+    try {
+        const target = await getManageableUser(req, res, req.params.id);
+        if (!target) return;
+
+        const fullName = typeof req.body.full_name === 'string' ? req.body.full_name.trim() : '';
+        const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+        if (!fullName || fullName.length > 150 ||
+            !/^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]*$/.test(fullName)) {
+            return res.status(400).json({ status: 'error', message: 'El nombre solo puede incluir letras, espacios, apóstrofes o guiones (máximo 150 caracteres).' });
+        }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+            return res.status(400).json({ status: 'error', message: 'Ingresa un correo válido de hasta 254 caracteres.' });
+        }
+
+        if (email !== target.email) {
+            if (!target.auth_user_id) {
+                return res.status(409).json({ status: 'error', message: 'La cuenta no tiene un usuario de autenticación asociado; no se puede cambiar el correo.' });
+            }
+            const { data: existingUser, error: existingError } = await supabase
+                .from('users')
+                .select('id')
+                .eq('email', email)
+                .neq('id', target.id)
+                .maybeSingle();
+            if (existingError) throw existingError;
+            if (existingUser) {
+                return res.status(409).json({ status: 'error', message: 'Ya existe una cuenta con ese correo.' });
+            }
+
+            const { error: authError } = await supabaseAuth.auth.admin.updateUserById(target.auth_user_id, {
+                email,
+                email_confirm: true,
+            });
+            if (authError) {
+                return res.status(400).json({ status: 'error', message: `No se pudo actualizar el correo de autenticación: ${authError.message}` });
+            }
+        }
+
+        const { data, error } = await supabase
+            .from('users')
+            .update({ full_name: fullName, email })
+            .eq('id', target.id)
+            .select('id, email, full_name, role, tenant_id, is_active, created_at, tenants!users_tenant_id_fkey(name)')
+            .single();
+
+        if (error) {
+            if (email !== target.email && target.auth_user_id) {
+                const { error: rollbackError } = await supabaseAuth.auth.admin.updateUserById(target.auth_user_id, {
+                    email: target.email,
+                    email_confirm: true,
+                });
+                if (rollbackError) {
+                    console.error('[Users] No se pudo revertir el correo de autenticación:', rollbackError.message);
+                }
+            }
+            throw error;
+        }
+
+        return res.status(200).json({ status: 'success', message: 'Usuario actualizado correctamente.', data });
+    } catch (error) {
+        console.error('[Users] Error al actualizar el usuario:', error.message || error);
+        return res.status(500).json({ status: 'error', message: 'Error al actualizar el usuario', error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : error.message) });
+    }
+};
+
+const setManagedUserActive = async (req, res) => {
+    try {
+        const target = await getManageableUser(req, res, req.params.id);
+        if (!target) return;
+        if (typeof req.body.is_active !== 'boolean') {
+            return res.status(400).json({ status: 'error', message: 'Indica si el usuario debe estar activo o inactivo.' });
+        }
+
+        const { data, error } = await supabase
+            .from('users')
+            .update({ is_active: req.body.is_active })
+            .eq('id', target.id)
+            .select('id, email, full_name, role, tenant_id, is_active, created_at, tenants!users_tenant_id_fkey(name)')
+            .single();
+        if (error) throw error;
+
+        return res.status(200).json({
+            status: 'success',
+            message: req.body.is_active ? 'Usuario activado.' : 'Usuario desactivado; ya no podrá iniciar sesión ni usar el sistema.',
+            data,
+        });
+    } catch (error) {
+        console.error('[Users] Error al cambiar el estado del usuario:', error.message || error);
+        return res.status(500).json({ status: 'error', message: 'Error al cambiar el estado del usuario', error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : error.message) });
     }
 };
 
@@ -156,7 +277,7 @@ const createUser = async (req, res) => {
                 role,
                 tenant_id: needsTenant ? tenant_id : null
             }])
-            .select('id, email, full_name, role, tenant_id, tenants(name)')
+            .select('id, email, full_name, role, tenant_id, tenants!users_tenant_id_fkey(name)')
             .single();
 
         if (error) {
@@ -170,6 +291,7 @@ const createUser = async (req, res) => {
             data
         });
     } catch (error) {
+        console.error('[Users] Error al crear usuario:', error.message || error);
         return res.status(500).json({ status: 'error', message: 'Error al crear el usuario', error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : error.message) });
     }
 };
@@ -310,7 +432,7 @@ const getMe = async (req, res) => {
     try {
         const { data, error } = await supabase
             .from('users')
-            .select('id, email, full_name, first_name, paternal_last_name, maternal_last_name, phone, age, ci, ci_extension, role, tenant_id, created_at, tenants(name, slug)')
+            .select('id, email, full_name, first_name, paternal_last_name, maternal_last_name, phone, age, ci, ci_extension, role, tenant_id, created_at, tenants!users_tenant_id_fkey(name, slug)')
             .eq('id', req.user.id)
             .single();
 
@@ -359,8 +481,8 @@ const updateMe = async (req, res) => {
         }
         if (phone !== undefined) {
             const cleanPhone = typeof phone === 'string' ? phone.trim() : '';
-            if (!/^\+?[0-9][0-9\s-]{6,14}$/.test(cleanPhone)) {
-                return res.status(400).json({ status: 'error', message: 'El teléfono no es válido (ej: +591 71234567).' });
+            if (!isValidBolivianPhone(cleanPhone)) {
+                return res.status(400).json({ status: 'error', message: 'El celular debe tener 8 digitos y comenzar con 5, 6 o 7.' });
             }
             patch.phone = cleanPhone;
         }
@@ -373,8 +495,8 @@ const updateMe = async (req, res) => {
         }
         if (ci !== undefined) {
             const clean = typeof ci === 'string' ? ci.trim() : '';
-            if (!/^\d{6,10}$/.test(clean)) {
-                return res.status(400).json({ status: 'error', message: 'El C.I. solo admite números (6 a 10 dígitos).' });
+            if (!isValidBolivianCi(clean)) {
+                return res.status(400).json({ status: 'error', message: 'El C.I. debe tener entre 6 y 8 digitos.' });
             }
             patch.ci = clean;
         }
@@ -409,7 +531,7 @@ const updateMe = async (req, res) => {
             .from('users')
             .update(patch)
             .eq('id', req.user.id)
-            .select('id, email, full_name, first_name, paternal_last_name, maternal_last_name, phone, age, ci, ci_extension, role, tenant_id, created_at, tenants(name, slug)')
+            .select('id, email, full_name, first_name, paternal_last_name, maternal_last_name, phone, age, ci, ci_extension, role, tenant_id, created_at, tenants!users_tenant_id_fkey(name, slug)')
             .single();
 
         if (error) {
@@ -427,6 +549,8 @@ const updateMe = async (req, res) => {
 module.exports = {
     getUsers,
     createUser,
+    updateManagedUserProfile,
+    setManagedUserActive,
     assignRole,
     resetUserPassword,
     getMe,

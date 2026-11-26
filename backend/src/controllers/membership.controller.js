@@ -326,7 +326,7 @@ const getPendingCancellationRequests = async (req, res) => {
     try {
         let query = supabase
             .from('membership_cancellation_requests')
-            .select('id, membership_id, user_id, tenant_id, requested_at, users(email, full_name), memberships(status, expires_at, membership_plans(name, price), tenants(name))')
+            .select('id, membership_id, user_id, tenant_id, requested_at, users!membership_cancellation_requests_user_id_fkey(email, full_name), memberships(status, expires_at, membership_plans(name, price), tenants(name))')
             .eq('status', 'pending')
             .order('requested_at', { ascending: true });
 

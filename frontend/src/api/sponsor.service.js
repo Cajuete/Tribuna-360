@@ -4,6 +4,10 @@ export const sponsorService = {
   async getAll(qs = '') {
     return await apiRequest(`/sponsors${qs}`, { method: 'GET' });
   },
+
+  async getPublic(qs = '') {
+    return await apiRequest(`/sponsors/public${qs}`, { method: 'GET' });
+  },
   async create(payload) {
     return await apiRequest('/sponsors', { method: 'POST', body: JSON.stringify(payload) });
   },

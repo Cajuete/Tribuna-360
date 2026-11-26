@@ -1,4 +1,5 @@
 const { supabase, supabaseAuth, supabasePublicAuth } = require('../config/supabase');
+const { isValidBolivianCi, isValidBolivianPhone } = require('../utils/bolivian-validation');
 
 const checkAuthStatus = async (req, res) => {
     try {
@@ -89,10 +90,10 @@ const register = async (req, res) => {
             });
         }
 
-        if (!/^\+?[0-9][0-9\s-]{6,14}$/.test(data.phone)) {
+        if (!isValidBolivianPhone(data.phone)) {
             return res.status(400).json({
                 status: 'error',
-                message: 'El telÃ©fono no es vÃ¡lido (ej: +591 71234567).'
+                message: 'El celular debe tener 8 digitos y comenzar con 5, 6 o 7.'
             });
         }
 
@@ -103,10 +104,10 @@ const register = async (req, res) => {
             });
         }
 
-        if (!/^\d{6,10}$/.test(data.ci)) {
+        if (!isValidBolivianCi(data.ci)) {
             return res.status(400).json({
                 status: 'error',
-                message: 'El C.I. debe contener solo nÃºmeros (ej: 12345678).'
+                message: 'El C.I. debe tener entre 6 y 8 digitos.'
             });
         }
 
@@ -224,7 +225,7 @@ const login = async (req, res) => {
 
         const { data: dbUser, error: dbError } = await supabase
             .from('users')
-            .select('id, email, full_name, role, tenant_id, created_at')
+            .select('id, email, full_name, role, tenant_id, is_active, created_at')
             .eq('auth_user_id', authData.user.id)
             .single();
 
@@ -232,6 +233,12 @@ const login = async (req, res) => {
             return res.status(403).json({
                 status: 'error',
                 message: 'El usuario no estÃ¡ registrado en el sistema.'
+            });
+        }
+        if (dbUser.is_active === false) {
+            return res.status(403).json({
+                status: 'error',
+                message: 'Tu cuenta está inactiva. Contacta al administrador de tu club.'
             });
         }
 

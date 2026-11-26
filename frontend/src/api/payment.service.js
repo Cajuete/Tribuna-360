@@ -49,6 +49,10 @@ export const paymentService = {
     return await apiRequest(`/payments${query}`, { method: 'GET' });
   },
 
+  async getSettings(tenantId) {
+    return await apiRequest(`/payments/settings/${encodeURIComponent(tenantId)}`, { method: 'GET' });
+  },
+
   async submitProof(id, file, buyerNote = '') {
     return await requestFile(`/payments/${encodeURIComponent(id)}/proof`, 'proof', file, {
       buyer_note: buyerNote,

@@ -33,6 +33,12 @@ const verifyToken = async (req, res, next) => {
                 message: 'El usuario autenticado no está registrado en la base de datos del sistema.'
             });
         }
+        if (dbUser.is_active === false) {
+            return res.status(403).json({
+                status: 'error',
+                message: 'Tu cuenta está inactiva. Contacta al administrador de tu club.'
+            });
+        }
 
         req.user = dbUser;
         next();
@@ -91,7 +97,7 @@ const optionalAuth = async (req, res, next) => {
             .eq('auth_user_id', user.id)
             .single();
 
-        if (dbError || !dbUser) {
+        if (dbError || !dbUser || dbUser.is_active === false) {
             return next();
         }
 

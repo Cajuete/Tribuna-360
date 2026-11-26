@@ -19,6 +19,20 @@ export const userService = {
     });
   },
 
+  async updateManagedProfile(id, payload) {
+    return await apiRequest(`/users/${id}/profile`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async setActive(id, is_active) {
+    return await apiRequest(`/users/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_active }),
+    });
+  },
+
   async resetPassword(id, password) {
     return await apiRequest(`/users/${id}/password`, {
       method: 'PATCH',

@@ -20,7 +20,7 @@ begin
     end if;
 
     requested_count := jsonb_array_length(p_tickets);
-    if requested_count < 1 or requested_count > 10 then
+    if requested_count < 1 then
         raise exception using errcode = 'P0001', message = 'INVALID_TICKET_COUNT';
     end if;
 

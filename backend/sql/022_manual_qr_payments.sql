@@ -147,7 +147,7 @@ begin
 
     if p_purchase_type = 'ticket' then
         quantity_value := (p_data->>'quantity')::integer;
-        if quantity_value < 1 or quantity_value > 10
+        if quantity_value < 1
            or coalesce(jsonb_array_length(p_ticket_codes), 0) <> quantity_value then
             raise exception using errcode = 'P0001', message = 'INVALID_TICKET_COUNT';
         end if;

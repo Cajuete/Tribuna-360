@@ -14,10 +14,10 @@ const scanLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 300, message: 
 const offlineSyncLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 30, message: 'Demasiadas sincronizaciones. Intenta nuevamente en un minuto.' });
 
 router.post('/purchase', verifyToken, requireRole(['box_office_cashier']), purchaseLimiter, purchaseTicket);
-router.post('/queue/:matchId/join', verifyToken, queueJoinLimiter, joinQueue);
-router.get('/queue/:matchId', verifyToken, queueStatusLimiter, getQueueStatus);
-router.delete('/queue/:matchId', verifyToken, queueLeaveLimiter, leaveQueue);
-router.get('/mine', verifyToken, getMyTickets);
+router.post('/queue/:matchId/join', verifyToken, requireRole(['fan']), queueJoinLimiter, joinQueue);
+router.get('/queue/:matchId', verifyToken, requireRole(['fan']), queueStatusLimiter, getQueueStatus);
+router.delete('/queue/:matchId', verifyToken, requireRole(['fan']), queueLeaveLimiter, leaveQueue);
+router.get('/mine', verifyToken, requireRole(['fan']), getMyTickets);
 router.get('/support/search', verifyToken, requireRole(['superadmin', 'club_admin', 'customer_support']), supportSearchTickets);
 router.post('/:id/regenerate', verifyToken, requireRole(['superadmin', 'club_admin', 'customer_support']), supportRegenerateTicket);
 router.get('/offline/matches', verifyToken, requireRole(['superadmin', 'gate_operator']), getOfflineMatches);

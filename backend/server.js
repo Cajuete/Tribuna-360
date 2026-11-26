@@ -20,9 +20,10 @@ const clubRequestRoutes = require('./src/routes/clubRequest.routes');
 const uploadRoutes = require('./src/routes/upload.routes');
 const saasRoutes = require('./src/routes/saas.routes');
 const paymentRoutes = require('./src/routes/payment.routes');
+const campaignRoutes = require('./src/routes/campaign.routes');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 
 const allowedOrigins = (process.env.FRONTEND_URL || '')
@@ -83,6 +84,7 @@ app.use('/api/v1/club-requests', clubRequestRoutes);
 app.use('/api/v1/promotions', promotionRoutes);
 app.use('/api/v1/packages', packageRoutes);
 app.use('/api/v1/sponsors', sponsorRoutes);
+app.use('/api/v1/campaigns', campaignRoutes);
 app.use('/api/v1/gates', gateRoutes);
 app.use('/api/v1/uploads', uploadRoutes);
 app.use('/api/v1/saas', saasRoutes);

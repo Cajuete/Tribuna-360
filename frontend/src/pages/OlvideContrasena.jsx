@@ -1,6 +1,7 @@
+import AlertBanner from '../components/AlertBanner';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, CircleAlert, CircleCheck, Loader2, Mail } from 'lucide-react';
+import { ArrowLeft, CircleCheck, Loader2, Mail } from 'lucide-react';
 import { authService } from '../api/auth.service';
 import Logo from '../components/Logo';
 
@@ -32,7 +33,7 @@ export default function OlvideContrasena() {
 
   return (
     <div className="relative overflow-hidden">
-      <img src="images/hero.png" alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-cover" />
+      <img src="images/hero.png" alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-contain" />
       <div className="absolute inset-0 bg-gradient-to-b from-gray-950/95 via-gray-950/80 to-gray-950/95" />
       <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[280px] h-[280px] sm:w-[600px] sm:h-[600px] rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
 
@@ -86,12 +87,7 @@ export default function OlvideContrasena() {
                 </button>
               </form>
 
-              {error && (
-                <div className="alert-error mt-4 flex items-start gap-2">
-                  <CircleAlert className="w-4 h-4 mt-0.5 shrink-0" />
-                  <span>{error}</span>
-                </div>
-              )}
+              <AlertBanner message={error} type="error" onClose={() => setError(null)} className="mt-4" />
 
               <Link
                 to="/login"

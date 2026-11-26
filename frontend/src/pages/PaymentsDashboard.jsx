@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import AlertBanner from '../components/AlertBanner';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { paymentService } from '../api/payment.service';
 
 const STATUS_LABELS = {
@@ -31,7 +32,8 @@ export default function PaymentsDashboard({ user, tenants = [] }) {
   const [notice, setNotice] = useState(null);
   const [reviewNotes, setReviewNotes] = useState({});
   const [settings, setSettings] = useState({ account_name: '', payment_instructions: '', qr_image_url: '' });
-  const [qrFile, setQrFile] = useState(null);
+  const qrInputRef = useRef(null);
+  const [uploadingQr, setUploadingQr] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [selectedTenantId, setSelectedTenantId] = useState('');
 
@@ -57,7 +59,8 @@ export default function PaymentsDashboard({ user, tenants = [] }) {
     ? (selectedTenantId || tenants[0]?.id || '')
     : user?.tenant_id;
   const activeTenantId = activeSelectedTenantId;
-  const canConfigure = ['superadmin', 'club_admin'].includes(user?.role) && Boolean(activeTenantId);
+  const canConfigure = ['superadmin', 'club_admin', 'payment_manager'].includes(user?.role) && Boolean(activeTenantId);
+  const canEditSettings = ['superadmin', 'payment_manager'].includes(user?.role);
 
   useEffect(() => {
     if (!canConfigure) return undefined;
@@ -82,11 +85,6 @@ export default function PaymentsDashboard({ user, tenants = [] }) {
     setError(null);
     setNotice(null);
     try {
-      if (qrFile) {
-        const uploaded = await paymentService.uploadQr(qrFile, activeTenantId);
-        setSettings(current => ({ ...current, qr_image_url: uploaded.data.qr_image_url }));
-        setQrFile(null);
-      }
       const saved = await paymentService.updateSettings({
         tenant_id: activeTenantId,
         account_name: settings.account_name,
@@ -98,6 +96,23 @@ export default function PaymentsDashboard({ user, tenants = [] }) {
       setError(err.message);
     } finally {
       setSavingSettings(false);
+    }
+  };
+
+  const uploadQr = async (file) => {
+    if (!file) return;
+    setUploadingQr(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const uploaded = await paymentService.uploadQr(file, activeTenantId);
+      setSettings(current => ({ ...current, qr_image_url: uploaded.data.qr_image_url }));
+      setNotice('Imagen del QR subida correctamente.');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setUploadingQr(false);
+      if (qrInputRef.current) qrInputRef.current.value = '';
     }
   };
 
@@ -129,6 +144,7 @@ export default function PaymentsDashboard({ user, tenants = [] }) {
       </header>
 
       {canConfigure && (
+        canEditSettings ? (
         <form onSubmit={saveSettings} className="rounded-2xl border border-gray-700 bg-gray-800 p-5 space-y-4">
           <div>
             <h3 className="text-lg font-semibold">QR y cuenta del club</h3>
@@ -145,10 +161,22 @@ export default function PaymentsDashboard({ user, tenants = [] }) {
           {settings.qr_image_url && (
             <img src={settings.qr_image_url} alt="QR configurado del club" className="w-40 rounded-lg bg-white p-2" />
           )}
-          <label className="block text-sm text-gray-300">
-            Imagen del QR (PNG, JPG o WEBP; máximo 2 MB)
-            <input type="file" accept="image/png,image/jpeg,image/webp" onChange={event => setQrFile(event.target.files?.[0] || null)} className="block mt-2 text-sm" />
-          </label>
+          <input
+            ref={qrInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            onChange={event => uploadQr(event.target.files?.[0])}
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => qrInputRef.current?.click()}
+            disabled={uploadingQr || !activeTenantId}
+            className="rounded-lg bg-sky-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-600 disabled:cursor-not-allowed disabled:bg-gray-700 disabled:text-gray-400"
+          >
+            {uploadingQr ? 'Subiendo QR...' : settings.qr_image_url ? 'Cambiar imagen del QR' : 'Subir imagen del QR'}
+          </button>
+          <p className="text-xs text-gray-400">PNG, JPG o WEBP · máximo 2 MB. Al elegir la imagen, se subirá automáticamente.</p>
           <label className="block text-sm text-gray-300">
             Titular de la cuenta
             <input value={settings.account_name} maxLength={160} onChange={event => setSettings(current => ({ ...current, account_name: event.target.value }))} className={`${inputClass} mt-1`} />
@@ -158,9 +186,28 @@ export default function PaymentsDashboard({ user, tenants = [] }) {
             <textarea value={settings.payment_instructions} maxLength={1000} rows={3} onChange={event => setSettings(current => ({ ...current, payment_instructions: event.target.value }))} className={`${inputClass} mt-1`} />
           </label>
           <button type="submit" disabled={savingSettings || !activeTenantId} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
-            {savingSettings ? 'Guardando...' : 'Guardar configuración'}
+            {savingSettings ? 'Guardando...' : 'Guardar titular e instrucciones'}
           </button>
         </form>
+        ) : (
+          <section className="rounded-2xl border border-gray-700 bg-gray-800 p-5 space-y-4">
+            <div>
+              <h3 className="text-lg font-semibold">QR y cuenta del club</h3>
+              <p className="text-xs text-gray-400 mt-1">Información configurada por el encargado de pagos. Solo lectura.</p>
+            </div>
+            {settings.qr_image_url
+              ? <img src={settings.qr_image_url} alt="QR configurado del club" className="w-40 rounded-lg bg-white p-2" />
+              : <p className="text-sm text-gray-400">El encargado de pagos aún no ha cargado un QR.</p>}
+            <div>
+              <p className="text-xs text-gray-400">Titular de la cuenta</p>
+              <p className="text-sm text-white">{settings.account_name || 'No configurado'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400">Instrucciones para pagar</p>
+              <p className="text-sm text-white whitespace-pre-wrap">{settings.payment_instructions || 'No configuradas'}</p>
+            </div>
+          </section>
+        )
       )}
 
       <section>
@@ -177,8 +224,8 @@ export default function PaymentsDashboard({ user, tenants = [] }) {
             <button type="button" onClick={loadPayments} className="rounded-lg bg-gray-700 px-3 py-2 text-sm">Actualizar</button>
           </div>
         </div>
-        {notice && <p className="mb-4 rounded-lg bg-emerald-950 p-3 text-sm text-emerald-200">{notice}</p>}
-        {error && <p className="mb-4 rounded-lg bg-red-950 p-3 text-sm text-red-200">{error}</p>}
+        <AlertBanner message={notice} type="success" onClose={() => setNotice(null)} className="mb-4 rounded-lg bg-emerald-950 p-3 text-sm text-emerald-200" />
+        <AlertBanner message={error} type="error" onClose={() => setError(null)} className="mb-4 rounded-lg bg-red-950 p-3 text-sm text-red-200" />
         {loading && <p className="text-sm text-gray-400">Cargando pagos...</p>}
         {!loading && payments.length === 0 && <p className="rounded-xl border border-gray-700 bg-gray-800 p-5 text-sm text-gray-400">No hay pagos en esta bandeja.</p>}
 

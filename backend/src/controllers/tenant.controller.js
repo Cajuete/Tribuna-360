@@ -1,10 +1,16 @@
 const { supabase } = require('../config/supabase');
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const BOLIVIA_DEPARTMENTS = [
+    'Beni', 'Chuquisaca', 'Cochabamba', 'La Paz', 'Oruro',
+    'Pando', 'Potosí', 'Santa Cruz', 'Tarija',
+];
+
 const getTenants = async (req, res) => {
     try {
         const { data, error } = await supabase
             .from('tenants')
-            .select('id, name, slug, logo_url, stadium_name, stadium_capacity, department, personeria, run_code, short_history, trophies_count, trophies_list, created_at, is_active, subscription_status, subscription_plan, activated_at, commission_rate, associations(code, name)')
+            .select('id, name, slug, logo_url, stadium_name, stadium_capacity, department, delivery_home_fee, delivery_point_fee, delivery_interdepartment_surcharge, personeria, run_code, short_history, trophies_count, trophies_list, follower_count, created_at, is_active, subscription_status, subscription_plan, activated_at, commission_rate, associations(code, name)')
             .order('name', { ascending: true });
 
         if (error) throw error;
@@ -21,7 +27,7 @@ const getTenantBySlug = async (req, res) => {
 
         const { data, error } = await supabase
             .from('tenants')
-            .select('id, name, slug, logo_url, stadium_name, stadium_capacity, department, personeria, run_code, short_history, trophies_count, trophies_list, created_at, is_active, subscription_status, subscription_plan, activated_at, commission_rate, associations(code, name)')
+            .select('id, name, slug, logo_url, stadium_name, stadium_capacity, department, delivery_home_fee, delivery_point_fee, delivery_interdepartment_surcharge, personeria, run_code, short_history, trophies_count, trophies_list, follower_count, created_at, is_active, subscription_status, subscription_plan, activated_at, commission_rate, associations(code, name)')
             .eq('slug', slug)
             .maybeSingle();
 
@@ -35,6 +41,111 @@ const getTenantBySlug = async (req, res) => {
     } catch (error) {
         return res.status(500).json({ status: 'error', message: 'Error al obtener el club', error: (process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : error.message) });
     }
+};
+
+const getDeliverySettings = async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('tenants')
+            .select('id, name, department, delivery_home_fee, delivery_point_fee, delivery_interdepartment_surcharge')
+            .eq('id', req.params.tenantId)
+            .maybeSingle();
+
+        if (error) throw error;
+        if (!data) return res.status(404).json({ success: false, message: 'Club no encontrado.' });
+
+        return res.status(200).json({ success: true, data });
+    } catch (error) {
+        console.error('[Tenants] No se pudo cargar la configuración de entrega:', error.message);
+        return res.status(500).json({ success: false, message: 'No se pudo cargar la configuración de entrega.' });
+    }
+};
+
+const getMyFollowedTenants = async (req, res) => {
+    try {
+        if (req.user?.role !== 'fan') {
+            return res.status(200).json({ status: 'success', data: [] });
+        }
+        const { data, error } = await supabase
+            .from('tenant_follows')
+            .select('tenant_id')
+            .eq('user_id', req.user.id);
+        if (error) throw error;
+        return res.status(200).json({ status: 'success', data: (data || []).map(row => row.tenant_id) });
+    } catch (error) {
+        console.error('[Tenants] No se pudieron obtener los clubes seguidos:', error.message);
+        return res.status(500).json({ status: 'error', message: 'No se pudieron cargar los clubes que sigues.' });
+    }
+};
+
+const followTenant = async (req, res) => {
+    try {
+        const tenantId = req.params.tenantId;
+        if (!UUID_RE.test(tenantId)) {
+            return res.status(400).json({ status: 'error', message: 'El identificador del club no es válido.' });
+        }
+        const { data: tenant, error: tenantError } = await supabase
+            .from('tenants')
+            .select('id')
+            .eq('id', tenantId)
+            .maybeSingle();
+        if (tenantError) throw tenantError;
+        if (!tenant) return res.status(404).json({ status: 'error', message: 'Club no encontrado.' });
+
+        const { error } = await supabase
+            .from('tenant_follows')
+            .insert({ tenant_id: tenantId, user_id: req.user.id });
+        if (error && error.code !== '23505') throw error;
+
+        return res.status(200).json({
+            status: 'success',
+            data: await getTenantFollowResult(tenantId, true),
+        });
+    } catch (error) {
+        console.error('[Tenants] No se pudo seguir el club:', error.message);
+        return res.status(500).json({ status: 'error', message: 'No se pudo seguir este club.' });
+    }
+};
+
+const unfollowTenant = async (req, res) => {
+    try {
+        const tenantId = req.params.tenantId;
+        if (!UUID_RE.test(tenantId)) {
+            return res.status(400).json({ status: 'error', message: 'El identificador del club no es válido.' });
+        }
+        const { data: tenant, error: tenantError } = await supabase
+            .from('tenants')
+            .select('id')
+            .eq('id', tenantId)
+            .maybeSingle();
+        if (tenantError) throw tenantError;
+        if (!tenant) return res.status(404).json({ status: 'error', message: 'Club no encontrado.' });
+
+        const { error } = await supabase
+            .from('tenant_follows')
+            .delete()
+            .eq('tenant_id', tenantId)
+            .eq('user_id', req.user.id);
+        if (error) throw error;
+
+        return res.status(200).json({
+            status: 'success',
+            data: await getTenantFollowResult(tenantId, false),
+        });
+    } catch (error) {
+        console.error('[Tenants] No se pudo dejar de seguir el club:', error.message);
+        return res.status(500).json({ status: 'error', message: 'No se pudo dejar de seguir este club.' });
+    }
+};
+
+const getTenantFollowResult = async (tenantId, following) => {
+    const { data, error } = await supabase
+        .from('tenants')
+        .select('follower_count')
+        .eq('id', tenantId)
+        .single();
+    if (error) throw error;
+    return { tenant_id: tenantId, following, follower_count: data.follower_count };
 };
 
 const createTenant = async (req, res) => {
@@ -78,7 +189,12 @@ const updateTenant = async (req, res) => {
             return res.status(403).json({ status: 'error', message: 'Solo puedes editar tu propio club.' });
         }
 
-        const { name, slug, logo_url, stadium_name, stadium_capacity, department, personeria, run_code, short_history, trophies_count, trophies_list, is_active, subscription_status, subscription_plan, commission_rate } = req.body;
+        const {
+            name, slug, logo_url, stadium_name, stadium_capacity, department,
+            delivery_home_fee, delivery_point_fee, delivery_interdepartment_surcharge,
+            personeria, run_code, short_history, trophies_count, trophies_list,
+            is_active, subscription_status, subscription_plan, commission_rate,
+        } = req.body;
         const patch = {};
 
         if (name !== undefined) {
@@ -97,7 +213,25 @@ const updateTenant = async (req, res) => {
 
         if (logo_url !== undefined) patch.logo_url = logo_url ? String(logo_url).trim() : null;
         if (stadium_name !== undefined) patch.stadium_name = stadium_name ? String(stadium_name).trim() : null;
-        if (department !== undefined) patch.department = department ? String(department).trim() : null;
+        if (department !== undefined) {
+            const value = typeof department === 'string' ? department.trim() : '';
+            if (!BOLIVIA_DEPARTMENTS.includes(value)) {
+                return res.status(400).json({ status: 'error', message: 'Selecciona un departamento válido para el club.' });
+            }
+            patch.department = value;
+        }
+        for (const [field, value] of Object.entries({
+            delivery_home_fee,
+            delivery_point_fee,
+            delivery_interdepartment_surcharge,
+        })) {
+            if (value === undefined) continue;
+            const amount = Number(value);
+            if (!Number.isInteger(amount) || amount < 0 || amount > 10000) {
+                return res.status(400).json({ status: 'error', message: 'Las tarifas de entrega deben ser números enteros entre Bs 0 y Bs 10.000.' });
+            }
+            patch[field] = amount;
+        }
         if (personeria !== undefined) patch.personeria = personeria ? String(personeria).trim() : null;
         if (run_code !== undefined) patch.run_code = run_code ? String(run_code).trim() : null;
         if (short_history !== undefined) patch.short_history = short_history ? String(short_history).trim() : null;
@@ -180,6 +314,10 @@ if (isSuperadmin) {
 module.exports = {
     getTenants,
     getTenantBySlug,
+    getDeliverySettings,
+    getMyFollowedTenants,
+    followTenant,
+    unfollowTenant,
     createTenant,
     updateTenant
 };

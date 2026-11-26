@@ -1,13 +1,18 @@
+import AlertBanner from '../components/AlertBanner';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Check, CircleAlert, Eye, EyeOff, Loader2, X } from 'lucide-react';
+import { ArrowLeft, Check, Eye, EyeOff, Loader2, X } from 'lucide-react';
 import { authService } from '../api/auth.service';
 import { useAuth } from '../context/auth-context';
 import Logo from '../components/Logo';
+import {
+  isValidBolivianCi,
+  isValidBolivianPhone,
+  normalizeBolivianCiInput,
+  normalizeBolivianPhoneInput,
+} from '../utils/bolivian-validation';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PHONE_RE = /^\+?[0-9][0-9\s-]{6,14}$/;
-const CI_RE = /^\d{6,10}$/;
 const CI_EXTENSIONS = ['LP', 'SC', 'CB', 'OR', 'PT', 'CH', 'TJ', 'BN', 'PD'];
 const MAX_NAME_LENGTH = 100;
 const PERSON_NAME_RE = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]*$/;
@@ -34,7 +39,11 @@ export default function Register() {
   const navigate = useNavigate();
 
   const set = (key) => (e) => {
-    const value = key === 'ci' ? e.target.value.replace(/[^0-9]/g, '') : e.target.value;
+    const value = key === 'ci'
+      ? normalizeBolivianCiInput(e.target.value)
+      : key === 'phone'
+        ? normalizeBolivianPhoneInput(e.target.value)
+        : e.target.value;
     setForm(current => ({ ...current, [key]: value }));
     setFieldErrors(current => ({
       ...current,
@@ -72,10 +81,10 @@ export default function Register() {
     if (form.password.length > 128) fe.password = 'La contraseña no puede superar 128 caracteres.';
     else if (passScore < 4) fe.password = 'La contraseña no cumple los requisitos.';
     if (form.confirm !== form.password) fe.confirm = 'Las contraseñas no coinciden.';
-    if (!PHONE_RE.test(form.phone.trim())) fe.phone = 'Teléfono no válido (ej: +591 71234567).';
+    if (!isValidBolivianPhone(form.phone.trim())) fe.phone = 'Ingresa 8 dígitos y comienza con 5, 6 o 7 (ej: 71234567).';
     const age = Number(form.age);
     if (!Number.isInteger(age) || age < 18 || age > 110) fe.age = 'Debes ser mayor de 18 años.';
-    if (!CI_RE.test(form.ci.trim())) fe.ci = 'El C.I. solo admite números (ej: 12345678).';
+    if (!isValidBolivianCi(form.ci.trim())) fe.ci = 'El C.I. debe tener entre 6 y 8 dígitos.';
     if (!CI_EXTENSIONS.includes(form.ci_extension)) fe.ci_extension = 'Selecciona la extensión del C.I.';
     setFieldErrors(fe);
     return fe;
@@ -139,20 +148,27 @@ export default function Register() {
 
   return (
     <div className="relative overflow-hidden">
-      <img src="images/hero.png" alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-cover" />
+      <img src="images/hero.png" alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-contain" />
       <div className="absolute inset-0 bg-gradient-to-b from-gray-950/95 via-gray-950/80 to-gray-950/95" />
       <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[280px] h-[280px] sm:w-[600px] sm:h-[600px] rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
 
       <div className="relative max-w-lg mx-auto px-6 py-14">
         <div className="card p-8 border border-white/10">
+          <Link
+            to="/"
+            className="btn btn-outline inline-flex items-center gap-2 px-3 py-2 text-sm mb-5"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Volver al inicio
+          </Link>
           <div className="flex justify-center mb-5">
             <Logo />
           </div>
           <span className="eyebrow block text-center">Cuenta gratuita</span>
           <h2 className="section-title text-3xl mt-2 mb-2 text-center">Crear Cuenta</h2>
           <p className="text-sm text-gray-400 text-center mb-7">
-            Registro como hincha. ¿Eres club?{' '}
-            <Link to="/unete" className="text-lime-400 hover:text-lime-300 font-semibold">Únete a Tribuna 360</Link>
+            Registro como hincha. ¿Representas a un club?{' '}
+            <Link to="/unete" className="text-lime-400 hover:text-lime-300 font-semibold">Solicita su incorporación</Link>
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4" noValidate>
@@ -231,7 +247,7 @@ export default function Register() {
 
             <div>
               <label htmlFor="phone" className="text-xs font-semibold text-gray-400 block mb-1.5">Teléfono</label>
-              <input id="phone" name="phone" type="tel" autoComplete="tel" maxLength={16} required aria-invalid={Boolean(fieldErrors.phone)} aria-describedby={fieldErrors.phone ? 'phone-error' : undefined} placeholder="+591 71234567"
+              <input id="phone" name="phone" type="tel" inputMode="numeric" autoComplete="tel-national" minLength={8} maxLength={8} pattern="[567][0-9]{7}" title="Ingresa 8 dígitos y comienza con 5, 6 o 7." required aria-invalid={Boolean(fieldErrors.phone)} aria-describedby={fieldErrors.phone ? 'phone-error' : undefined} placeholder="71234567"
                 value={form.phone} onChange={set('phone')} className={inputClass('phone')} />
               {fieldErrors.phone && <p id="phone-error" className="text-xs text-rose-400 mt-1">{fieldErrors.phone}</p>}
             </div>
@@ -245,7 +261,7 @@ export default function Register() {
               </div>
               <div>
                 <label htmlFor="ci" className="text-xs font-semibold text-gray-400 block mb-1.5">Carnet (C.I.)</label>
-                <input id="ci" name="ci" type="text" inputMode="numeric" maxLength={10} required aria-invalid={Boolean(fieldErrors.ci)} aria-describedby={fieldErrors.ci ? 'ci-error' : undefined} placeholder="12345678"
+                <input id="ci" name="ci" type="text" inputMode="numeric" minLength={6} maxLength={8} pattern="[0-9]{6,8}" required aria-invalid={Boolean(fieldErrors.ci)} aria-describedby={fieldErrors.ci ? 'ci-error' : undefined} placeholder="12345678"
                   value={form.ci} onChange={set('ci')} className={inputClass('ci')} />
                 {fieldErrors.ci && <p id="ci-error" className="text-xs text-rose-400 mt-1">{fieldErrors.ci}</p>}
               </div>
@@ -272,12 +288,7 @@ export default function Register() {
             </div>
           )}
 
-          {error && (
-            <div className="alert-error mt-4 flex items-start gap-2">
-              <CircleAlert className="w-4 h-4 mt-0.5 shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
+          <AlertBanner message={error} type="error" onClose={() => setError(null)} className="mt-4" />
 
           <p className="mt-6 text-center text-sm text-gray-400">
             ¿Ya tienes cuenta?{' '}

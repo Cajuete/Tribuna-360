@@ -1,11 +1,17 @@
+import AlertBanner from '../components/AlertBanner';
 import { useState, useEffect } from 'react';
 import { Check } from 'lucide-react';
 import { useAuth } from '../context/auth-context';
 import { userService } from '../api/user.service';
+import {
+  formatBolivianPhoneForInput,
+  isValidBolivianCi,
+  isValidBolivianPhone,
+  normalizeBolivianCiInput,
+  normalizeBolivianPhoneInput,
+} from '../utils/bolivian-validation';
 
 const CI_EXTENSIONS = ['LP', 'SC', 'CB', 'OR', 'PT', 'CH', 'TJ', 'BN', 'PD'];
-const PHONE_RE = /^\+?[0-9][0-9\s-]{6,14}$/;
-const CI_RE = /^\d{6,10}$/;
 const MAX_NAME_LENGTH = 100;
 const PERSON_NAME_RE = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]*$/;
 
@@ -45,9 +51,9 @@ export default function MyProfile() {
             first_name: u.first_name || '',
             paternal_last_name: u.paternal_last_name || '',
             maternal_last_name: u.maternal_last_name || '',
-            phone: u.phone || '',
+            phone: formatBolivianPhoneForInput(u.phone),
             age: u.age ? String(u.age) : '',
-            ci: u.ci || '',
+            ci: u.ci ? String(u.ci) : '',
             ci_extension: u.ci_extension || '',
           });
           const savedAv = localStorage.getItem(`t360_avatar_${u.id}`) || 'av1';
@@ -61,7 +67,11 @@ export default function MyProfile() {
   }, []);
 
   const set = (key) => (e) => {
-    const value = key === 'ci' ? e.target.value.replace(/[^0-9]/g, '') : e.target.value;
+    const value = key === 'ci'
+      ? normalizeBolivianCiInput(e.target.value)
+      : key === 'phone'
+        ? normalizeBolivianPhoneInput(e.target.value)
+        : e.target.value;
     setForm(current => ({ ...current, [key]: value }));
     setFieldErrors(current => ({ ...current, [key]: undefined }));
     setError(null);
@@ -90,12 +100,12 @@ export default function MyProfile() {
       else if (value.length > MAX_NAME_LENGTH) errors[field] = 'Usa hasta 100 caracteres.';
       else if (!PERSON_NAME_RE.test(value)) errors[field] = 'Solo puede incluir letras, espacios, apóstrofes o guiones.';
     }
-    if (!PHONE_RE.test(form.phone.trim())) errors.phone = 'Teléfono no válido (ej: +591 71234567).';
+    if (!isValidBolivianPhone(form.phone.trim())) errors.phone = 'Ingresa 8 dígitos y comienza con 5, 6 o 7 (ej: 71234567).';
     const age = Number(form.age);
     if (!form.age || !Number.isInteger(age) || age < 18 || age > 110) {
       errors.age = 'La edad debe ser un número entero entre 18 y 110.';
     }
-    if (!CI_RE.test(form.ci.trim())) errors.ci = 'El C.I. debe tener entre 6 y 10 dígitos.';
+    if (!isValidBolivianCi(form.ci.trim())) errors.ci = 'El C.I. debe tener entre 6 y 8 dígitos.';
     if (!CI_EXTENSIONS.includes(form.ci_extension)) errors.ci_extension = 'Selecciona la extensión del C.I.';
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) {
@@ -167,8 +177,8 @@ export default function MyProfile() {
         </div>
       )}
 
-      {error && <p className="mb-4 alert-error">{error}</p>}
-      {success && <p className="mb-4 alert-ok">{success}</p>}
+      <AlertBanner message={error} type="error" onClose={() => setError(null)} className="mb-4" />
+      <AlertBanner message={success} type="success" onClose={() => setSuccess(null)} className="mb-4" />
 
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -189,7 +199,7 @@ export default function MyProfile() {
           </div>
           <div>
             <label htmlFor="phone" className="text-xs font-bold text-slate-300 uppercase tracking-wider block mb-1.5">Teléfono</label>
-            <input id="phone" name="phone" type="tel" autoComplete="tel" maxLength={16} placeholder="+591 71234567" value={form.phone} onChange={set('phone')} className={`input ${fieldErrors.phone ? 'border-rose-500/60' : ''}`} aria-invalid={Boolean(fieldErrors.phone)} aria-describedby={fieldErrors.phone ? 'phone-error' : undefined} required />
+            <input id="phone" name="phone" type="tel" inputMode="numeric" autoComplete="tel-national" minLength={8} maxLength={8} pattern="[567][0-9]{7}" title="Ingresa 8 dígitos y comienza con 5, 6 o 7." placeholder="71234567" value={form.phone} onChange={set('phone')} className={`input ${fieldErrors.phone ? 'border-rose-500/60' : ''}`} aria-invalid={Boolean(fieldErrors.phone)} aria-describedby={fieldErrors.phone ? 'phone-error' : undefined} required />
             {fieldErrors.phone && <p id="phone-error" className="text-xs text-rose-400 mt-1">{fieldErrors.phone}</p>}
           </div>
           <div>
@@ -199,7 +209,7 @@ export default function MyProfile() {
           </div>
           <div>
             <label htmlFor="ci" className="text-xs font-bold text-slate-300 uppercase tracking-wider block mb-1.5">Carnet (C.I.)</label>
-            <input id="ci" name="ci" type="text" inputMode="numeric" maxLength={10} value={form.ci} onChange={set('ci')} className={`input ${fieldErrors.ci ? 'border-rose-500/60' : ''}`} aria-invalid={Boolean(fieldErrors.ci)} aria-describedby={fieldErrors.ci ? 'ci-error' : undefined} required />
+            <input id="ci" name="ci" type="text" inputMode="numeric" minLength={6} maxLength={8} pattern="[0-9]{6,8}" value={form.ci} onChange={set('ci')} className={`input ${fieldErrors.ci ? 'border-rose-500/60' : ''}`} aria-invalid={Boolean(fieldErrors.ci)} aria-describedby={fieldErrors.ci ? 'ci-error' : undefined} required />
             {fieldErrors.ci && <p id="ci-error" className="text-xs text-rose-400 mt-1">{fieldErrors.ci}</p>}
           </div>
           <div>

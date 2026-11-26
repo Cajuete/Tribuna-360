@@ -1,19 +1,74 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, NavLink, useLocation, useSearchParams } from 'react-router-dom';
-import { Menu, X, User, Bell, Ticket, ShieldCheck, LayoutDashboard } from 'lucide-react';
+import {
+  Menu,
+  X,
+  User,
+  Bell,
+  Ticket,
+  ShieldCheck,
+  LayoutDashboard,
+  CircleDot,
+  ShoppingCart,
+  Users,
+  UserPlus,
+  ClipboardList,
+  CreditCard,
+  BadgeCheck,
+  ScanLine,
+  Tag,
+  Store,
+  Building2,
+  BarChart3,
+} from 'lucide-react';
 import { useAuth } from '../context/auth-context';
+import { useCart } from '../context/cart-context';
 import Logo from './Logo';
 
-const navLinkCls = ({ isActive }) => `site-nav-link ${isActive ? 'is-active' : ''}`;
+const navIcons = {
+  '/partidos': CircleDot,
+  '/tienda': Store,
+  '/socios': Users,
+  '/unete': UserPlus,
+  '/mis-entradas': Ticket,
+  '/mis-pedidos': ClipboardList,
+  '/mis-pagos': CreditCard,
+  '/mis-socio': BadgeCheck,
+  '/scanner': ScanLine,
+  '/ventas': Tag,
+};
+
+const adminTabIcons = {
+  resumen: LayoutDashboard,
+  partidos: CircleDot,
+  tienda: Store,
+  pedidos: ClipboardList,
+  reportes: BarChart3,
+  socios: Users,
+  'mi-club': Building2,
+  pagos: CreditCard,
+  clubes: Building2,
+};
+
+const getNavIcon = (link) => (
+  (link.tab && adminTabIcons[link.tab])
+  || navIcons[link.to]
+  || LayoutDashboard
+);
 
 export default function Navbar() {
   const { user, token, logout } = useAuth();
+  const { cart } = useCart();
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const notifRef = useRef(null);
   const role = user?.role;
+  const cartItemCount = cart.reduce((total, item) => total + item.quantity, 0);
+  const cartIsActive = location.pathname === '/carrito';
+  const cartIsHighlighted = cartItemCount > 0 || cartIsActive;
+  const canShop = !token || role === 'fan';
 
   const adminTab = searchParams.get('tab') || 'resumen';
   const onAdmin = location.pathname === '/admin';
@@ -32,14 +87,14 @@ export default function Navbar() {
 
   if (!token) {
     links.push(
-      { to: '/', label: 'Partidos', end: true },
+      { to: '/partidos', label: 'Partidos' },
       { to: '/tienda', label: 'Tienda' },
       { to: '/socios', label: 'Socios' },
-      { to: '/unete', label: 'Únete' },
+      { to: '/unete', label: 'Registrar mi club' },
     );
   } else if (role === 'fan') {
     links.push(
-      { to: '/', label: 'Partidos', end: true },
+      { to: '/partidos', label: 'Partidos' },
       { to: '/tienda', label: 'Tienda' },
       { to: '/socios', label: 'Socios' },
       { to: '/mis-entradas', label: 'Entradas' },
@@ -95,6 +150,8 @@ export default function Navbar() {
       { to: '/admin', label: 'Panel', tab: 'resumen' },
       { to: '/admin?tab=pagos', label: 'Pagos', tab: 'pagos' },
     );
+  } else if (role === 'delivery_manager') {
+    links.push({ to: '/admin?tab=pedidos', label: 'Despachos', tab: 'pedidos' });
   } else if (role === 'superadmin') {
     links.push(
       { to: '/admin', label: 'SaaS Dashboard', tab: 'resumen' },
@@ -126,26 +183,64 @@ export default function Navbar() {
         {/* Desktop Navigation */}
         {links.length > 0 && (
           <nav className="site-nav hidden lg:flex items-center gap-1.5">
-            {links.map(link => (
-              link.tab ? (
-                <Link
-                  key={link.to}
-                  to={link.to}
-                  className={`site-nav-link whitespace-nowrap ${onAdmin && adminTab === link.tab ? 'is-active' : ''}`}
-                >
+            {links.map((link, index) => {
+              const Icon = getNavIcon(link);
+              const tooltip = (
+                <span id={`desktop-nav-tooltip-${index}`} role="tooltip" className="site-nav-tooltip">
                   {link.label}
-                </Link>
-              ) : (
-                <NavLink key={link.to} to={link.to} end={link.end} className={navLinkCls}>
-                  {link.label}
-                </NavLink>
-              )
-            ))}
+                </span>
+              );
+
+              return link.tab ? (
+                  <Link
+                    key={link.to}
+                    to={link.to}
+                    aria-label={link.label}
+                    aria-current={onAdmin && adminTab === link.tab ? 'page' : undefined}
+                    aria-describedby={`desktop-nav-tooltip-${index}`}
+                    className={`site-nav-link site-nav-icon-link ${onAdmin && adminTab === link.tab ? 'is-active' : ''}`}
+                  >
+                    <Icon className="site-nav-icon" aria-hidden="true" />
+                    {tooltip}
+                  </Link>
+                ) : (
+                  <NavLink
+                    key={link.to}
+                    to={link.to}
+                    end={link.end}
+                    aria-label={link.label}
+                    aria-describedby={`desktop-nav-tooltip-${index}`}
+                    className={({ isActive }) => `site-nav-link site-nav-icon-link ${isActive ? 'is-active' : ''}`}
+                  >
+                    <Icon className="site-nav-icon" aria-hidden="true" />
+                    {tooltip}
+                  </NavLink>
+              );
+            })}
           </nav>
         )}
 
         {/* Desktop Actions */}
         <div className="hidden lg:flex items-center gap-3">
+          {canShop && (
+            <Link
+              to="/carrito"
+              aria-current={cartIsActive ? 'page' : undefined}
+              aria-label={`Carrito${cartItemCount ? `, ${cartItemCount} artículos` : ', vacío'}`}
+              className={`relative p-3 rounded-xl border transition shadow-sm hover:text-emerald-400 hover:border-emerald-500/50 ${
+                cartIsHighlighted
+                  ? 'bg-emerald-500/10 border-emerald-500/60 text-emerald-300'
+                  : 'bg-slate-900 border-slate-800 text-slate-300'
+              }`}
+            >
+              <ShoppingCart className="w-4 h-4" aria-hidden="true" />
+              {cartItemCount > 0 && (
+                <span aria-hidden="true" className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-emerald-500 text-slate-950 text-[0.65rem] font-bold flex items-center justify-center ring-2 ring-slate-950">
+                  {cartItemCount > 99 ? '99+' : cartItemCount}
+                </span>
+              )}
+            </Link>
+          )}
           {token ? (
             <>
               {/* Notification Tray */}
@@ -153,11 +248,11 @@ export default function Navbar() {
                 <button
                   type="button"
                   onClick={() => setNotificationsOpen(!notificationsOpen)}
-                  aria-label="Notificaciones"
+                  aria-label={`Notificaciones${notifications.length ? `, ${notifications.length} pendientes` : ''}`}
                   className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-emerald-400 hover:border-emerald-500/50 transition relative shadow-sm"
                 >
                   <Bell className="w-4 h-4" />
-                  <span className="absolute -top-1 -right-1 bg-emerald-500 text-slate-950 font-bold text-[0.65rem] w-4.5 h-4.5 rounded-full flex items-center justify-center">
+                  <span aria-hidden="true" className="absolute -top-1 -right-1 bg-emerald-500 text-slate-950 font-bold text-[0.65rem] w-4.5 h-4.5 rounded-full flex items-center justify-center ring-2 ring-slate-950">
                     {notifications.length}
                   </span>
                 </button>
@@ -211,21 +306,42 @@ export default function Navbar() {
                 Ingresar
               </Link>
               <Link to="/unete" className="btn btn-primary py-2.5 px-5 text-xs font-bold uppercase tracking-wider">
-                Únete
+                Registrar mi club
               </Link>
             </>
           )}
         </div>
 
-        {/* Mobile Hamburger Button */}
-        <button
-          type="button"
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          aria-label="Abrir menú"
-          className="lg:hidden p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-200 hover:text-emerald-400 transition"
-        >
-          {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-        </button>
+        <div className="lg:hidden flex items-center gap-2">
+          {canShop && (
+            <Link
+              to="/carrito"
+              aria-current={cartIsActive ? 'page' : undefined}
+              onClick={() => setMobileMenuOpen(false)}
+              aria-label={`Carrito${cartItemCount ? `, ${cartItemCount} artículos` : ', vacío'}`}
+              className={`relative p-2.5 rounded-xl border transition hover:text-emerald-400 ${
+                cartIsHighlighted
+                  ? 'bg-emerald-500/10 border-emerald-500/60 text-emerald-300'
+                  : 'bg-slate-900 border-slate-800 text-slate-200'
+              }`}
+            >
+              <ShoppingCart className="w-5 h-5" aria-hidden="true" />
+              {cartItemCount > 0 && (
+                <span aria-hidden="true" className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-emerald-500 text-slate-950 text-[0.65rem] font-bold flex items-center justify-center ring-2 ring-slate-950">
+                  {cartItemCount > 99 ? '99+' : cartItemCount}
+                </span>
+              )}
+            </Link>
+          )}
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            aria-label={mobileMenuOpen ? 'Cerrar menú' : 'Abrir menú'}
+            className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-200 hover:text-emerald-400 transition"
+          >
+            {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          </button>
+        </div>
       </div>
 
       {/* Mobile Drawer Menu */}
@@ -296,7 +412,7 @@ export default function Navbar() {
                   onClick={() => setMobileMenuOpen(false)}
                   className="btn btn-primary py-3.5 text-sm font-bold uppercase tracking-wider text-center"
                 >
-                  Únete
+                  Registrar mi club
                 </Link>
               </div>
             )}

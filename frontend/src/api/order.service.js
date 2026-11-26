@@ -1,4 +1,6 @@
-import { apiRequest } from './client';
+import { API_BASE_URL, apiRequest } from './client';
+
+const getToken = () => sessionStorage.getItem('supabase_token') || localStorage.getItem('supabase_token') || '';
 
 export const orderService = {
   async create(payload) {
@@ -22,5 +24,18 @@ export const orderService = {
       method: 'PATCH',
       body: JSON.stringify({ status }),
     });
+  },
+
+  async markDelivered(id, photo) {
+    const body = new FormData();
+    body.append('proof', photo);
+    const response = await fetch(`${API_BASE_URL}/orders/${encodeURIComponent(id)}/deliver`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${getToken()}` },
+      body,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.message || 'No se pudo confirmar la entrega.');
+    return data;
   },
 };

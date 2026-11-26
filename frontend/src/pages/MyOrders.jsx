@@ -1,3 +1,4 @@
+import AlertBanner from '../components/AlertBanner';
 import { useState, useEffect } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { orderService } from '../api/order.service';
@@ -6,6 +7,7 @@ const STATUS_STYLES = {
   pending: 'bg-yellow-900 text-yellow-300',
   paid: 'bg-emerald-900 text-emerald-300',
   shipped: 'bg-sky-900 text-sky-300',
+  delivered: 'bg-emerald-900 text-emerald-200',
   cancelled: 'bg-red-900 text-red-300',
 };
 
@@ -13,6 +15,7 @@ const STATUS_LABELS = {
   pending: 'Pendiente',
   paid: 'Pagado',
   shipped: 'Despachado',
+  delivered: 'Entregado',
   cancelled: 'Cancelado',
 };
 
@@ -25,7 +28,7 @@ export default function MyOrders() {
 
   useEffect(() => {
     if (!msg) return;
-    const t = setTimeout(() => setMsg(null), 4000);
+    const t = setTimeout(() => setMsg(null), 7000);
     return () => clearTimeout(t);
   }, [msg]);
 
@@ -43,9 +46,9 @@ export default function MyOrders() {
     <div className="max-w-4xl mx-auto px-6 py-10">
       <h2 className="text-3xl font-bold mb-6">Mis Pedidos</h2>
 
-      {msg && <p className="mb-6 p-3 rounded text-center bg-emerald-900 text-emerald-300">{msg}</p>}
+      <AlertBanner message={msg} type="success" onClose={() => setMsg(null)} className="mb-6 p-3 rounded text-center bg-emerald-900 text-emerald-300" />
       {loading && <p className="text-center text-gray-400 py-8">Cargando pedidos...</p>}
-      {error && <p className="p-3 rounded text-center bg-red-900 text-red-300">{error}</p>}
+      <AlertBanner message={error} type="error" onClose={() => setError(null)} className="p-3 rounded text-center bg-red-900 text-red-300" />
 
       {!loading && !error && orders.length === 0 && (
         <div className="text-center py-12 bg-gray-800 border border-gray-700 rounded-2xl">
@@ -65,6 +68,21 @@ export default function MyOrders() {
               <p className="text-sm text-gray-300 mt-1">
                 {o.quantity} × Bs {o.unit_price} = <span className="font-semibold text-emerald-400">Bs {o.total}</span>
               </p>
+              {o.delivery && (
+                <p className="text-xs text-slate-300 mt-2">
+                  Entrega a nombre de {o.delivery.recipient_name} ({o.delivery.phone}):{' '}
+                  {o.delivery.method === 'home'
+                    ? [o.delivery.street, o.delivery.number && `N.º ${o.delivery.number}`, o.delivery.zone, o.delivery.city, o.delivery.department].filter(Boolean).join(', ')
+                    : [o.delivery.location, o.delivery.city, o.delivery.department].filter(Boolean).join(', ')}
+                  {o.delivery.reference ? ` · Ref.: ${o.delivery.reference}` : ''}
+                  {o.delivery.fee !== undefined ? ` · Tarifa total del envío: Bs ${Number(o.delivery.fee).toLocaleString('es-BO')}` : ''}
+                </p>
+              )}
+              {o.delivery_proof_url && (
+                <a href={o.delivery_proof_url} target="_blank" rel="noreferrer" className="inline-block text-xs text-emerald-300 underline mt-2">
+                  Ver foto de entrega
+                </a>
+              )}
               <p className="text-xs text-gray-500 mt-1">{new Date(o.created_at).toLocaleString()}</p>
             </div>
             <span className={`text-xs px-3 py-1 rounded-full uppercase font-semibold ${STATUS_STYLES[o.status] || 'bg-gray-700 text-gray-300'}`}>

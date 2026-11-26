@@ -1,9 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { matchService } from '../api/match.service';
 import { tenantService } from '../api/tenant.service';
 import { associationService } from '../api/association.service';
 import ClubLogo from '../components/ClubLogo';
+import FollowClubButton from '../components/FollowClubButton';
+import AlertBanner from '../components/AlertBanner';
+import CampaignBanners from '../components/CampaignBanners';
+import { useCampaigns } from '../hooks/useCampaigns';
+import { useAuth } from '../context/auth-context';
 import hero1 from '../assets/images (1).jpg';
 import hero2 from '../assets/images (3).jpg';
 import hero3 from '../assets/images (5).jpg';
@@ -15,7 +20,7 @@ const SLIDES = [
     eyebrow: 'Entradas digitales',
     title: 'Tu lugar en la grada, en segundos',
     text: 'Compra con QR, prescinde de filas y vive cada partido desde la tribuna de tu club.',
-    to: '/',
+    to: '/partidos',
     cta: 'Ver partidos',
     alt: 'Estadio de fútbol lleno',
   },
@@ -42,11 +47,18 @@ const SLIDES = [
 const CARD_IMGS = [hero1, hero2, hero3];
 
 export default function Home() {
+  const { token, user } = useAuth();
+  const canShop = !token || user?.role === 'fan';
+  const navigate = useNavigate();
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState(null);
   const [clubs, setClubs] = useState([]);
+  const [followedClubIds, setFollowedClubIds] = useState([]);
+  const [followBusyId, setFollowBusyId] = useState(null);
+  const [followError, setFollowError] = useState(null);
   const [slide, setSlide] = useState(0);
+  const { campaigns, loading: campaignsLoading, error: campaignsError } = useCampaigns({ placement: 'home' });
 
   useEffect(() => {
     matchService
@@ -69,6 +81,51 @@ export default function Home() {
     });
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    if (!token || user?.role !== 'fan') {
+      setFollowedClubIds([]);
+      return () => { active = false; };
+    }
+
+    tenantService.getFollowed()
+      .then(response => {
+        if (active && response.status === 'success') setFollowedClubIds(response.data);
+      })
+      .catch(error => {
+        if (active) setFollowError(error.message);
+      });
+
+    return () => { active = false; };
+  }, [token, user?.role]);
+
+  const toggleClubFollow = async club => {
+    if (!token) {
+      navigate('/login');
+      return;
+    }
+    if (user?.role !== 'fan') return;
+
+    const following = followedClubIds.includes(club.id);
+    setFollowBusyId(club.id);
+    setFollowError(null);
+    try {
+      const response = following
+        ? await tenantService.unfollow(club.id)
+        : await tenantService.follow(club.id);
+      setFollowedClubIds(current => following
+        ? current.filter(id => id !== club.id)
+        : current.includes(club.id) ? current : [...current, club.id]);
+      setClubs(current => current.map(item => item.id === club.id
+        ? { ...item, follower_count: response.data.follower_count }
+        : item));
+    } catch (error) {
+      setFollowError(error.message);
+    } finally {
+      setFollowBusyId(null);
+    }
+  };
+
   const go = useCallback(
     dir => setSlide(s => (s + dir + SLIDES.length) % SLIDES.length),
     []
@@ -90,7 +147,7 @@ export default function Home() {
               key={sl.title}
               className={`absolute inset-0 transition-opacity duration-700 ${i === slide ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
             >
-              <img src={sl.img} alt={sl.alt} className="w-full h-full object-cover" />
+              <img src={sl.img} alt={sl.alt} className="w-full h-full object-contain" />
               <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/60 to-black/10" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
             </div>
@@ -105,9 +162,11 @@ export default function Home() {
                 <Link to={s.to} className="btn btn-primary">
                   {s.cta}
                 </Link>
-                <Link to="/unete" className="btn btn-outline">
-                  Únete a tu club
-                </Link>
+                {!token && (
+                  <Link to="/unete" className="btn btn-outline">
+                    Registrar mi club
+                  </Link>
+                )}
               </div>
             </div>
           </div>
@@ -141,6 +200,7 @@ export default function Home() {
           </div>
         </div>
       </section>
+      <CampaignBanners campaigns={campaigns} placement="home" loading={campaignsLoading} error={campaignsError} />
       {stats && (
         <section className="max-w-5xl mx-auto px-6 mt-10">
           <div className="card grid grid-cols-2 md:grid-cols-4 divide-x divide-white/5 overflow-hidden">
@@ -167,27 +227,45 @@ export default function Home() {
               <span className="eyebrow">Clubes</span>
               <h2 className="section-title text-3xl md:text-4xl mt-1">Entra al espacio de tu club</h2>
               <p className="text-gray-400 text-sm mt-2">
-                Toca el escudo y descubre sus partidos, su tienda y sus planes de socio.
+                Descubre sus partidos y su tienda, y sigue a tu club para demostrar tu apoyo.
               </p>
             </div>
             <div className="hairline hidden md:block flex-1 mb-4 ml-6" />
           </div>
 
+          <AlertBanner message={followError} type="error" onClose={() => setFollowError(null)} className="mb-4" />
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
             {clubs.map(c => (
-              <Link
+              <article
                 key={c.id}
-                to={`/club/${c.slug}`}
-                className="card card-hover p-5 flex flex-col items-center gap-3 text-center group"
+                className="card card-hover p-4 flex flex-col items-center gap-3 text-center group"
               >
-                <ClubLogo name={c.name} logoUrl={c.logo_url} size="md" />
-                <span className="font-display font-bold text-sm leading-tight group-hover:text-emerald-400 transition">
-                  {c.name}
-                </span>
-                <span className="text-[0.65rem] uppercase tracking-widest text-gray-500">
-                  {c.department || 'Bolivia'}
-                </span>
-              </Link>
+                <Link
+                  to={`/club/${c.slug}`}
+                  className="flex w-full flex-col items-center gap-3 rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400"
+                >
+                  <ClubLogo name={c.name} logoUrl={c.logo_url} size="md" />
+                  <span className="font-display font-bold text-sm leading-tight group-hover:text-emerald-400 transition">
+                    {c.name}
+                  </span>
+                  <span className="text-[0.65rem] uppercase tracking-widest text-gray-500">
+                    {c.department || 'Bolivia'}
+                  </span>
+                </Link>
+                {(!token || user?.role === 'fan') && (
+                  <div className="mt-auto flex w-full flex-col items-center gap-2 border-t border-white/5 pt-3">
+                    <span className="text-xs text-gray-400">
+                      {Number(c.follower_count || 0).toLocaleString('es-BO')} {Number(c.follower_count) === 1 ? 'hincha apoya' : 'hinchas apoyan'}
+                    </span>
+                    <FollowClubButton
+                      following={followedClubIds.includes(c.id)}
+                      loading={followBusyId === c.id}
+                      onClick={() => toggleClubFollow(c)}
+                      className="w-full px-2 text-xs"
+                    />
+                  </div>
+                )}
+              </article>
             ))}
           </div>
         </section>
@@ -199,8 +277,16 @@ export default function Home() {
             <span className="eyebrow">Calendario</span>
             <h2 className="section-title text-3xl md:text-4xl mt-1">Próximos partidos</h2>
           </div>
-          <div className="hairline hidden md:block flex-1 mb-4 ml-6" />
+          <Link to="/partidos" className="btn btn-outline py-2 px-4">
+            Ver todos
+          </Link>
         </div>
+
+        {!canShop && (
+          <p className="mb-5 rounded-xl border border-amber-700/50 bg-amber-950/30 p-4 text-sm text-amber-200">
+            Esta cuenta es de personal del club. Para comprar entradas, ingresa con una cuenta de hincha.
+          </p>
+        )}
 
         {loading ? (
           <p className="text-center text-gray-400 py-10">Cargando partidos...</p>
@@ -216,7 +302,7 @@ export default function Home() {
                   <img
                     src={m.image_url || CARD_IMGS[i % CARD_IMGS.length]}
                     alt={`vs ${m.opponent}`}
-                    className="w-full h-full object-cover zoom-img"
+                    className="w-full h-full object-contain"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-[#0d141c] via-black/30 to-transparent" />
                   <span className="badge absolute top-3 left-3 bg-black/60">{m.status}</span>
@@ -235,9 +321,11 @@ export default function Home() {
                   <p className="text-xs text-gray-500 mt-1">
                     {new Date(m.match_date).toLocaleString()}
                   </p>
-                  <Link to={`/comprar/${m.id}`} className="btn btn-primary mt-5 w-full">
-                    Comprar entradas
-                  </Link>
+                  {canShop && (
+                    <Link to={`/comprar/${m.id}`} className="btn btn-primary mt-5 w-full">
+                      Comprar entradas
+                    </Link>
+                  )}
                 </div>
               </article>
             ))}
@@ -249,7 +337,7 @@ export default function Home() {
 
       <section className="max-w-[1200px] mx-auto px-6 mt-16">
         <div className="relative rounded-3xl overflow-hidden border border-emerald-700/40">
-          <img src={hero1} alt="" className="absolute inset-0 w-full h-full object-cover" />
+          <img src={hero1} alt="" className="absolute inset-0 w-full h-full object-contain" />
           <div className="absolute inset-0 bg-gradient-to-r from-black/95 via-black/80 to-emerald-900/60" />
           <div className="relative px-8 py-14 md:px-16 flex flex-col md:flex-row items-center gap-8">
             <div className="flex-1 text-center md:text-left">

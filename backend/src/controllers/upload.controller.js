@@ -3,7 +3,13 @@ const { supabase } = require('../config/supabase');
 
 const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 const EXTENSIONS = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
-const BUCKETS = { club: 'club-logos', product: 'product-images', match: 'match-images' };
+const BUCKETS = {
+    club: 'club-logos',
+    product: 'product-images',
+    match: 'match-images',
+    campaign: 'campaign-banners',
+    sponsor: 'sponsor-logos',
+};
 
 const readyBuckets = new Set();
 
@@ -65,5 +71,7 @@ const uploadImage = async (req, res, { bucket, label }) => {
 const uploadClubLogo = (req, res) => uploadImage(req, res, { bucket: BUCKETS.club, label: 'el escudo' });
 const uploadProductImage = (req, res) => uploadImage(req, res, { bucket: BUCKETS.product, label: 'la imagen del producto' });
 const uploadMatchImage = (req, res) => uploadImage(req, res, { bucket: BUCKETS.match, label: 'la imagen del partido' });
+const uploadCampaignBanner = (req, res) => uploadImage(req, res, { bucket: BUCKETS.campaign, label: 'el banner de la campaña' });
+const uploadSponsorLogo = (req, res) => uploadImage(req, res, { bucket: BUCKETS.sponsor, label: 'el logo del patrocinador' });
 
-module.exports = { uploadClubLogo, uploadProductImage, uploadMatchImage };
+module.exports = { uploadClubLogo, uploadProductImage, uploadMatchImage, uploadCampaignBanner, uploadSponsorLogo };

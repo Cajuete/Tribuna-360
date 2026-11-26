@@ -24,7 +24,7 @@ Una cancelación iniciada por el socio queda pendiente de revisión; la membres�
 
 ## Pagos QR manuales (entradas, tienda y membresías)
 
-Antes de habilitar los pagos, confirma que estén aplicadas las migraciones base `006_membership_details.sql`, `018_zone_seating_mode.sql` y `021_hu19_membership_management.sql`; ejecuta también las migraciones pendientes `019_hu17_pending_club_requests.sql` y `020_hu18_club_request_review.sql` si aún no se aplicaron. Finalmente ejecuta `backend/sql/022_manual_qr_payments.sql` en Supabase.
+Antes de habilitar los pagos, confirma que estén aplicadas las migraciones base `006_membership_details.sql`, `018_zone_seating_mode.sql` y `021_hu19_membership_management.sql`; ejecuta también las migraciones pendientes `019_hu17_pending_club_requests.sql` y `020_hu18_club_request_review.sql` si aún no se aplicaron. Finalmente ejecuta `backend/sql/022_manual_qr_payments.sql` y `backend/sql/023_payment_manager_role.sql` en Supabase. La migración 023 agrega `payment_manager` al enum `user_role`, necesario para crear usuarios con ese rol.
 
 Cada administrador de club configura la imagen del QR, titular e instrucciones en **Admin → Pagos**; el superadmin puede elegir un club y configurarlo desde la misma pestaña. El dinero se transfiere directamente a la cuenta del club. El hincha elige QR, paga y adjunta foto o PDF del comprobante; se guarda de forma privada. La compra queda en revisión hasta que el admin del club o el **Encargado de pagos** confirma el abono. Solo al confirmar se habilitan las entradas, se marca como pagado el pedido o se activa/renueva la membresía. Un rechazo requiere motivo y libera la reserva de entradas o stock.
 
@@ -33,6 +33,16 @@ El QR estático no confirma transferencias automáticamente: el encargado debe c
 El rol `payment_manager` se asigna desde **Admin → Usuarios** por el administrador del club y solo puede revisar pagos de su propio tenant. `financial_auditor` y `sales_manager` pueden consultar la bandeja, pero no aprobar/rechazar. `club_admin` configura el QR de su club y `superadmin` puede configurar el de cualquier club. Las compras de tienda se limitan a un club por checkout, ya que cada club recibe directamente sus fondos.
 
 La opción de tarjeta se muestra separada del QR, pero permanece deshabilitada hasta contratar y configurar un proveedor compatible con Bolivia. No se guardan datos de tarjeta ni se simula una confirmación. Antes de integrar un proveedor, verifica con este que ofrezca API, webhooks y liquidación directa a cada club. En particular, la información pública disponible de PagosNet no confirma esas capacidades técnicas ni la modalidad multi-comercio.
+
+## Campañas y ofertas automáticas
+
+Después de aplicar las migraciones `018_zone_seating_mode.sql`, `022_manual_qr_payments.sql` y `025_delivery_dispatcher.sql`, ejecuta en orden `backend/sql/028_promotion_campaigns.sql`, `backend/sql/029_campaign_ticket_discounts.sql` y `backend/sql/030_campaign_membership_discounts.sql` en el SQL Editor de Supabase; después reinicia el backend. Las migraciones conservan los códigos promocionales existentes y agregan campañas con banners, fechas, ubicaciones públicas y ofertas dirigidas a productos, zonas de entradas o planes de socio de un solo club.
+
+El gerente de ventas, el administrador del club o el superadmin puede crear campañas desde **Ventas → Campañas**, subir una imagen PNG/JPG/WEBP de hasta 2 MB, elegir en qué páginas aparece el banner y seleccionar productos, partido y zona, o planes de socio. Los descuentos de membresía se aplican al asociarse y renovar. Los banners activos aparecen en un carrusel en las páginas seleccionadas; el diseño agrega automáticamente detalles visuales de temporada cuando el título o descripción menciona Halloween, Navidad, Black Friday, Carnaval, aniversario/cumpleaños o verano. No requiere instalar una biblioteca adicional. El panel usa formularios guiados: no pide JSON ni direcciones web para las imágenes o los artículos de un paquete. El logo de los patrocinadores también se sube como archivo desde el panel. El hincha ve los patrocinadores activos dentro del espacio público del club correspondiente.
+
+Una campaña se publica solo cuando está activa y la fecha/hora actual está entre **Desde** y **Hasta**. En **Campañas del club**, el estado **Programada**, **Finalizada** o **Pausada** indica por qué todavía no se muestra; además, cada banner solo aparece en las ubicaciones seleccionadas.
+
+Los descuentos porcentuales o fijos se vuelven a validar y calcular en PostgreSQL al crear el pago o emitir una entrada; el navegador no determina el monto cobrado. Si varias campañas vigentes ofrecen descuentos en el mismo producto, zona o plan, se usa el descuento mayor y no se acumulan. La oferta deja de aplicarse fuera de las fechas de la campaña. La opción anterior de **Códigos promocionales** permanece separada y sus registros no se modifican. Los paquetes del panel seleccionan productos existentes del club y cantidades, en lugar de guardar artículos como JSON libre.
 
 ## Evitar sobreventas de entradas por zona
 
